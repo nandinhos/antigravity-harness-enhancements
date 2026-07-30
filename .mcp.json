@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "graphify": {
+      "command": "graphify-mcp",
+      "args": ["${workspace.path}/graphify-out/graph.json"]
+    },
+    "headroom": {
+      "command": "headroom",
+      "args": ["mcp", "serve", "--proxy-url", "http://127.0.0.1:8787"]
+    }
+  }
+}

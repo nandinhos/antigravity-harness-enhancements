@@ -33,7 +33,7 @@ Este documento foi elaborado para ser lido e executado por **você ou diretament
 Na máquina do trabalho, basta clonar este repositório e executar o script de automação:
 
 ```bash
-git clone <URL_DESTE_REPO> ~/projects/antigravity-harness-enhancements
+git clone https://github.com/nandinhos/antigravity-harness-enhancements.git ~/projects/antigravity-harness-enhancements
 cd ~/projects/antigravity-harness-enhancements
 bash bootstrap-workstation.sh
 ```
@@ -54,7 +54,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc # ou source ~/.zshrc
 
 # Instalar Node.js 20+ (via NVM se necessário)
-curl -o- https://raw.githubusercontent.com/nandoxdev/nvm/v0.40.0/install.sh | bash # ou nvm padrão
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+source ~/.bashrc # ou carregar nvm
 nvm install 22
 ```
 

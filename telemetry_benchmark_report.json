@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-02 18:01:26",
+  "timestamp": "2026-11-03 12:26:15",
   "environment": "WSL2 Ubuntu (Linux x86_64)",
   "cases": [
     {
@@ -13,47 +13,47 @@
       },
       "optimized": {
         "strategy": "Graphify AST Knowledge Graph (Tree-Sitter zero-token)",
-        "bytes": 3624,
-        "estimated_tokens": 921,
-        "lines": 26,
-        "latency_ms": 138.15,
-        "exit_code": 0
+        "bytes": 363,
+        "estimated_tokens": 95,
+        "lines": 3,
+        "latency_ms": 420.0,
+        "exit_code": 1
       },
-      "token_reduction_pct": 87.21
+      "token_reduction_pct": 98.72
     },
     {
       "id": "CASE-02",
       "name": "Identificação de Nós Centrais de Arquitetura",
       "traditional": {
         "strategy": "Grep recursivo de símbolos no repositório",
-        "bytes": 48828,
-        "estimated_tokens": 12843,
-        "latency_ms": 2.91
+        "bytes": 7184,
+        "estimated_tokens": 1886,
+        "latency_ms": 7.56
       },
       "optimized": {
         "strategy": "Graphify PageRank & Centrality Analysis",
-        "bytes": 335,
-        "estimated_tokens": 83,
-        "latency_ms": 110.77,
-        "exit_code": 0
+        "bytes": 108,
+        "estimated_tokens": 28,
+        "latency_ms": 121.84,
+        "exit_code": 1
       },
-      "token_reduction_pct": 99.31
+      "token_reduction_pct": 98.5
     },
     {
       "id": "CASE-03",
       "name": "Sobrecarga de Interceptação (Hook Execution Latency)",
       "iterations": 5,
-      "avg_latency_ms": 55.52,
-      "min_latency_ms": 51.68,
-      "max_latency_ms": 61.42,
+      "avg_latency_ms": 59.47,
+      "min_latency_ms": 54.55,
+      "max_latency_ms": 71.2,
       "exit_code": 0,
       "status": "PASS"
     }
   ],
   "summary": {
-    "total_traditional_tokens": 19801,
-    "total_optimized_tokens": 1004,
-    "global_reduction_pct": 94.93,
-    "hook_overhead_ms": 55.52
+    "total_traditional_tokens": 8844,
+    "total_optimized_tokens": 123,
+    "global_reduction_pct": 98.61,
+    "hook_overhead_ms": 59.47
   }
 }

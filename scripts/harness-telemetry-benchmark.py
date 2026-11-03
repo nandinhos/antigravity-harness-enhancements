@@ -12,7 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 
-WORKSPACE = Path("/home/nandodev/projects/antigravity-harness-enhancements")
+WORKSPACE = Path(__file__).resolve().parent.parent
 
 def estimate_tokens(text: str) -> int:
     """Estimativa conservadora padrão da indústria para modelos LLM modernos (média ~3.8 chars/token)."""
@@ -23,7 +23,8 @@ def estimate_tokens(text: str) -> int:
 def run_cmd(cmd: list[str], cwd: Path = WORKSPACE) -> tuple[int, str, float]:
     start = time.perf_counter()
     env = os.environ.copy()
-    env["PATH"] = f"/home/nandodev/.gemini/antigravity/bin:/home/nandodev/.local/bin:{env.get('PATH', '')}"
+    home = Path.home()
+    env["PATH"] = f"{home}/.gemini/antigravity/bin:{home}/.local/bin:{home}/.cargo/bin:{env.get('PATH', '')}"
     try:
         proc = subprocess.run(
             cmd,

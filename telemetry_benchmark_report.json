@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-03 12:26:15",
+  "timestamp": "2026-11-03 12:57:39",
   "environment": "WSL2 Ubuntu (Linux x86_64)",
   "cases": [
     {
@@ -13,13 +13,13 @@
       },
       "optimized": {
         "strategy": "Graphify AST Knowledge Graph (Tree-Sitter zero-token)",
-        "bytes": 363,
-        "estimated_tokens": 95,
-        "lines": 3,
-        "latency_ms": 420.0,
+        "bytes": 108,
+        "estimated_tokens": 28,
+        "lines": 1,
+        "latency_ms": 418.45,
         "exit_code": 1
       },
-      "token_reduction_pct": 98.72
+      "token_reduction_pct": 99.62
     },
     {
       "id": "CASE-02",
@@ -28,13 +28,13 @@
         "strategy": "Grep recursivo de símbolos no repositório",
         "bytes": 7184,
         "estimated_tokens": 1886,
-        "latency_ms": 7.56
+        "latency_ms": 13.95
       },
       "optimized": {
         "strategy": "Graphify PageRank & Centrality Analysis",
         "bytes": 108,
         "estimated_tokens": 28,
-        "latency_ms": 121.84,
+        "latency_ms": 126.31,
         "exit_code": 1
       },
       "token_reduction_pct": 98.5
@@ -43,17 +43,17 @@
       "id": "CASE-03",
       "name": "Sobrecarga de Interceptação (Hook Execution Latency)",
       "iterations": 5,
-      "avg_latency_ms": 59.47,
-      "min_latency_ms": 54.55,
-      "max_latency_ms": 71.2,
+      "avg_latency_ms": 60.05,
+      "min_latency_ms": 54.34,
+      "max_latency_ms": 67.4,
       "exit_code": 0,
       "status": "PASS"
     }
   ],
   "summary": {
     "total_traditional_tokens": 8844,
-    "total_optimized_tokens": 123,
-    "global_reduction_pct": 98.61,
-    "hook_overhead_ms": 59.47
+    "total_optimized_tokens": 56,
+    "global_reduction_pct": 99.37,
+    "hook_overhead_ms": 60.05
   }
 }

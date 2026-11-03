@@ -2,3 +2,8 @@ graphify-out/
 __pycache__/
 *.pyc
 .venv/
+.context-mode/
+.github/context-mode/
+context-mode/
+stats-pid-*.json
+

@@ -56,11 +56,13 @@ CONTEXT_MODE_BUNDLE="$(find "$HOME/.nvm" -name "cli.bundle.mjs" 2>/dev/null | gr
 if [ -n "$CONTEXT_MODE_BUNDLE" ] && [ -x "$NODE_PATH_FOUND" ]; then
     cat << EOF > "$HOME/.gemini/antigravity/bin/context-mode"
 #!/usr/bin/env bash
+export CONTEXT_MODE_DIR="\${CONTEXT_MODE_DIR:-\$HOME/.gemini/context-mode}"
+mkdir -p "\$CONTEXT_MODE_DIR"
 export PATH="\$(dirname "$NODE_PATH_FOUND"):$HOME/.local/bin:\$PATH"
 exec "$NODE_PATH_FOUND" --no-warnings "$CONTEXT_MODE_BUNDLE" "\$@"
 EOF
     chmod +x "$HOME/.gemini/antigravity/bin/context-mode"
-    echo "  ✓ context-mode wrapper configurado"
+    echo "  ✓ context-mode wrapper configurado com CONTEXT_MODE_DIR centralizado"
 fi
 
 if [ -f "$HOME/.local/bin/graphify" ]; then

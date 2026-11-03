@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "🚀 Iniciando provisionamento do Harness Antigravity..."
 
 # 0. Ajuste de PATH para subshells não-interativos
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/.gemini/antigravity/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 if [ -d "$HOME/.nvm" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
     # Carrega o NVM se disponível para garantir o node/npm corretos
     # shellcheck source=/dev/null
@@ -45,6 +45,116 @@ if command -v npm &> /dev/null; then
 else
     echo "⚠️ npm não encontrado no PATH. Instale o Node.js 20+ para utilizar o context-mode."
 fi
+
+# 3.1 Wrappers determinísticos em ~/.gemini/antigravity/bin/ (Resolução do PATH no Antigravity)
+echo "⚙️  Configurando wrappers determinísticos em ~/.gemini/antigravity/bin/..."
+mkdir -p "$HOME/.gemini/antigravity/bin"
+
+NODE_PATH_FOUND="$(which node 2>/dev/null || echo "$HOME/.nvm/versions/node/v22.22.1/bin/node")"
+CONTEXT_MODE_BUNDLE="$(find "$HOME/.nvm" -name "cli.bundle.mjs" 2>/dev/null | grep "context-mode" | head -n 1 || echo "")"
+
+if [ -n "$CONTEXT_MODE_BUNDLE" ] && [ -x "$NODE_PATH_FOUND" ]; then
+    cat << EOF > "$HOME/.gemini/antigravity/bin/context-mode"
+#!/usr/bin/env bash
+export PATH="\$(dirname "$NODE_PATH_FOUND"):$HOME/.local/bin:\$PATH"
+exec "$NODE_PATH_FOUND" --no-warnings "$CONTEXT_MODE_BUNDLE" "\$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/context-mode"
+    echo "  ✓ context-mode wrapper configurado"
+fi
+
+if [ -f "$HOME/.local/bin/graphify" ]; then
+    cat << 'EOF' > "$HOME/.gemini/antigravity/bin/graphify"
+#!/usr/bin/env bash
+export PATH="$HOME/.local/bin:$PATH"
+exec "$HOME/.local/bin/graphify" "$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/graphify"
+    echo "  ✓ graphify wrapper configurado"
+fi
+
+if [ -f "$HOME/.local/bin/graphify-mcp" ]; then
+    cat << 'EOF' > "$HOME/.gemini/antigravity/bin/graphify-mcp"
+#!/usr/bin/env bash
+export PATH="$HOME/.local/bin:$PATH"
+exec "$HOME/.local/bin/graphify-mcp" "$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/graphify-mcp"
+    echo "  ✓ graphify-mcp wrapper configurado"
+fi
+
+# 3.2 Registro Canônico de MCP Servers em ~/.gemini/config/mcp_config.json
+echo "⚙️  Sincronizando servidores MCP em ~/.gemini/config/mcp_config.json..."
+mkdir -p "$HOME/.gemini/config"
+python3 - << 'PYEOF'
+import json, os
+mcp_file = os.path.expanduser("~/.gemini/config/mcp_config.json")
+data = {"mcpServers": {}}
+if os.path.exists(mcp_file):
+    try:
+        with open(mcp_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        pass
+
+servers = data.setdefault("mcpServers", {})
+servers["context-mode"] = {
+    "command": os.path.expanduser("~/.gemini/antigravity/bin/context-mode")
+}
+servers["graphify"] = {
+    "command": os.path.expanduser("~/.gemini/antigravity/bin/graphify-mcp")
+}
+
+with open(mcp_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+print("  ✓ mcp_config.json atualizado com context-mode e graphify")
+PYEOF
+
+# 3.3 Registro Canônico de Hooks em ~/.gemini/config/hooks.json
+echo "⚙️  Sincronizando hooks nativos em ~/.gemini/config/hooks.json..."
+python3 - << 'PYEOF'
+import json, os
+hooks_file = os.path.expanduser("~/.gemini/config/hooks.json")
+data = {}
+if os.path.exists(hooks_file):
+    try:
+        with open(hooks_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        pass
+
+data["context-mode-guard"] = {
+    "enabled": True,
+    "PreToolUse": [
+        {
+            "matcher": "run_command|view_file|grep_search|read_url_content",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "context-mode hook antigravity-cli pretooluse",
+                    "timeout": 10
+                }
+            ]
+        }
+    ],
+    "PostToolUse": [
+        {
+            "matcher": "run_command|view_file|grep_search|read_url_content",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "context-mode hook antigravity-cli posttooluse",
+                    "timeout": 10
+                }
+            ]
+        }
+    ]
+}
+
+with open(hooks_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+print("  ✓ hooks.json atualizado com context-mode-guard nativo")
+PYEOF
 
 # 4. Clonar / Atualizar Skills Canônicas
 echo "📦 Sincronizando Suíte Canônica de Skills..."
@@ -145,4 +255,4 @@ if [ "$CHECK_FAILURES" -eq 0 ]; then
 else
     echo "❌ Concluído com $CHECK_FAILURES falha(s). Verifique os logs acima."
 fi
-echo "Para ativar MCPs e hooks, confira o Passo 5 em SETUP_WORK_MACHINE.md."
+echo "Para executar a bateria de telemetria: python3 scripts/harness-telemetry-benchmark.py"

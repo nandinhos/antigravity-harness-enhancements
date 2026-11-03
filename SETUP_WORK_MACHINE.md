@@ -101,50 +101,54 @@ ls -la ~/.gemini/config/skills/
 
 ---
 
-### Passo 5: Configurar `~/.gemini/settings.json` (MCPs e Hooks)
-Crie ou atualize o arquivo `~/.gemini/settings.json` para ativar os MCP servers (`context7`, `context-mode`, `serena`):
+### Passo 5: Configurar MCPs e Hooks Nativos do Antigravity
 
+> **Nota de Automação**: Se você executou o Método 1 (`bootstrap-workstation.sh`), esta etapa já foi concluída automaticamente!
+
+Para conferir ou configurar manualmente:
+1. Registre os servidores MCP em `~/.gemini/config/mcp_config.json`:
 ```json
 {
-  "hasSeenIdeIntegrationNudge": true,
-  "ide": { "enabled": true },
-  "security": {
-    "auth": { "selectedType": "oauth-personal" },
-    "disableYoloMode": true,
-    "enablePermanentToolApproval": true
-  },
   "mcpServers": {
     "context-mode": {
-      "command": "context-mode"
+      "command": "/home/nandodev/.gemini/antigravity/bin/context-mode"
     },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
-      "env": {
-        "CONTEXT7_API_KEY": "SUA_API_KEY_AQUI"
-      }
+    "graphify": {
+      "command": "/home/nandodev/.gemini/antigravity/bin/graphify-mcp"
     }
-  },
-  "hooks": {
-    "BeforeTool": [
+  }
+}
+```
+
+2. Registre os hooks nativos em `~/.gemini/config/hooks.json`:
+```json
+{
+  "context-mode-guard": {
+    "enabled": true,
+    "PreToolUse": [
       {
-        "matcher": "run_shell_command|read_file|read_many_files|grep_search|search_file_content|web_fetch|activate_skill",
-        "hooks": [{ "type": "command", "command": "context-mode hook gemini-cli beforetool" }]
+        "matcher": "run_command|view_file|grep_search|read_url_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "context-mode hook antigravity-cli pretooluse",
+            "timeout": 10
+          }
+        ]
       }
     ],
-    "AfterTool": [
-      { "hooks": [{ "type": "command", "command": "context-mode hook gemini-cli aftertool" }] }
-    ],
-    "PreCompress": [
-      { "hooks": [{ "type": "command", "command": "context-mode hook gemini-cli precompress" }] }
-    ],
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "context-mode hook gemini-cli sessionstart" }] }
+    "PostToolUse": [
+      {
+        "matcher": "run_command|view_file|grep_search|read_url_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "context-mode hook antigravity-cli posttooluse",
+            "timeout": 10
+          }
+        ]
+      }
     ]
-  },
-  "general": {
-    "previewFeatures": true,
-    "sessionRetention": { "enabled": true, "maxAge": "120d" }
   }
 }
 ```

@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-11-02 18:01:26",
+  "environment": "WSL2 Ubuntu (Linux x86_64)",
+  "cases": [
+    {
+      "id": "CASE-01",
+      "name": "Descoberta Arquitetural e Mapeamento de Dependências",
+      "traditional": {
+        "strategy": "Leitura bruta de arquivos (view_file em lote)",
+        "bytes": 28326,
+        "estimated_tokens": 6958,
+        "lines": 673
+      },
+      "optimized": {
+        "strategy": "Graphify AST Knowledge Graph (Tree-Sitter zero-token)",
+        "bytes": 3624,
+        "estimated_tokens": 921,
+        "lines": 26,
+        "latency_ms": 138.15,
+        "exit_code": 0
+      },
+      "token_reduction_pct": 87.21
+    },
+    {
+      "id": "CASE-02",
+      "name": "Identificação de Nós Centrais de Arquitetura",
+      "traditional": {
+        "strategy": "Grep recursivo de símbolos no repositório",
+        "bytes": 48828,
+        "estimated_tokens": 12843,
+        "latency_ms": 2.91
+      },
+      "optimized": {
+        "strategy": "Graphify PageRank & Centrality Analysis",
+        "bytes": 335,
+        "estimated_tokens": 83,
+        "latency_ms": 110.77,
+        "exit_code": 0
+      },
+      "token_reduction_pct": 99.31
+    },
+    {
+      "id": "CASE-03",
+      "name": "Sobrecarga de Interceptação (Hook Execution Latency)",
+      "iterations": 5,
+      "avg_latency_ms": 55.52,
+      "min_latency_ms": 51.68,
+      "max_latency_ms": 61.42,
+      "exit_code": 0,
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total_traditional_tokens": 19801,
+    "total_optimized_tokens": 1004,
+    "global_reduction_pct": 94.93,
+    "hook_overhead_ms": 55.52
+  }
+}

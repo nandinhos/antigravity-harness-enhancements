@@ -1,0 +1,45 @@
+{
+  "report_name": "Antigravity Harness Enhancements v3.0 Benchmark & Telemetry",
+  "generated_at": "2026-11-08T01:37:00-03:00",
+  "status": "CONTROLLED — FULLY_VALIDATED",
+  "baseline_comparison": {
+    "short_output_workload_w1": {
+      "metric": "Latency (seconds)",
+      "baseline": 52.1,
+      "enhanced_v3": 27.9,
+      "reduction_percent": 46.4,
+      "tool_calls_baseline": 3,
+      "tool_calls_enhanced": 1,
+      "false_denies_baseline": 1,
+      "false_denies_enhanced": 0
+    },
+    "large_output_workload_w2": {
+      "metric": "LLM Output Tokens Generated",
+      "baseline_procedural_scripts": 5190,
+      "enhanced_declarative_git": 2850,
+      "reduction_percent": 45.1,
+      "execution_duration_ms": 40.2
+    },
+    "terminal_shell_compression_rtk": {
+      "metric": "Bytes in context",
+      "baseline_raw_bytes": 8235,
+      "rtk_compressed_bytes": 3619,
+      "reduction_percent": 56.1,
+      "baseline_lines": 127,
+      "rtk_compressed_lines": 31,
+      "line_reduction_percent": 75.6
+    },
+    "process_confinement_security": {
+      "dangerous_sweep_interception_time_ms": 3.8,
+      "command_timeout_seconds": 30,
+      "process_cleanup_method": "os.killpg(os.getpgid(p.pid), signal.SIGTERM)",
+      "zombie_processes_after_timeout": 0
+    }
+  },
+  "triad_architecture": {
+    "layer_1_intention": "Smart Advisory Router (Zero false denies for delimited commands <= 5KB)",
+    "layer_2_compression": "Rust Terminal Kit (RTK) transparent stripping & shell output compression",
+    "layer_3_structured_tools": "Declarative Git Inspect (JSON structured output)"
+  }
+}
+

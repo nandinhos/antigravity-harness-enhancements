@@ -1,0 +1,5 @@
+{"ts": "2026-11-09T15:10:33Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "deny", "latency_ms": 0.03, "rule": "[CEH FAIL-CLOSED]"}
+{"ts": "2026-11-09T15:10:40Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 43.97, "rule": null}
+{"ts": "2026-11-09T15:11:17Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "deny", "latency_ms": 0.13, "rule": "[GUARDRAIL BLOQUEOU]"}
+{"ts": "2026-11-09T15:11:23Z", "terminal": "fernando-trabalho", "tool": "unknown", "decision": "deny", "latency_ms": 0.03, "rule": "[CEH FAIL-CLOSED]"}
+{"ts": "2026-11-09T15:11:33Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "deny", "latency_ms": 0.13, "rule": "[GUARDRAIL BLOQUEOU]"}

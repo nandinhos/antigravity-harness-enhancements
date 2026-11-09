@@ -29,9 +29,14 @@ DISPATCHER_VERSION = "0.9.1-p0.1"
 MAX_WRAPPER_DEPTH = 3
 
 # Localização e carregamento dos módulos do harness
-HARNESS_DIR = Path("/home/nandodev/.gemini/config/hooks")
-if str(HARNESS_DIR) not in sys.path:
-    sys.path.insert(0, str(HARNESS_DIR))
+DEV_CEH_SCRIPTS = Path.home() / "projects" / "antigravity-clearer-engineering-harness" / "clearer-engineering" / "scripts"
+PLUGIN_CEH_SCRIPTS = Path.home() / ".gemini" / "config" / "plugins" / "clearer-engineering" / "scripts"
+HARNESS_DIR = Path.home() / ".gemini" / "config" / "hooks"
+LOCAL_HOOKS_DIR = Path(__file__).resolve().parent
+
+for p in (DEV_CEH_SCRIPTS, PLUGIN_CEH_SCRIPTS, HARNESS_DIR, LOCAL_HOOKS_DIR):
+    if p.is_dir() and str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 # Elo 1: CEH Safety Gate (destructive_command_guardrail)
 _SAFETY_GATE_AVAILABLE = False
@@ -41,8 +46,13 @@ try:
     evaluate_ceh = guard_destructive.evaluate_command_safety
     handle_hook_lifecycle = guard_destructive.handle_hook_lifecycle
     _SAFETY_GATE_AVAILABLE = True
-except Exception as e:
-    _SAFETY_GATE_ERROR = e
+except Exception:
+    try:
+        from hook_context import handle_hook_lifecycle
+        from ceh_core.engine import evaluate as evaluate_ceh
+        _SAFETY_GATE_AVAILABLE = True
+    except Exception as e:
+        _SAFETY_GATE_ERROR = e
 
 # Elo 2: Scoped Execution Guard
 _SCOPED_GUARD_AVAILABLE = False

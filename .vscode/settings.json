@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/hooks",
+    "${workspaceFolder}/scripts",
+    "/home/gacpac/.gemini/config/plugins/clearer-engineering/scripts",
+    "/home/gacpac/projects/antigravity-clearer-engineering-harness/clearer-engineering/scripts"
+  ]
+}

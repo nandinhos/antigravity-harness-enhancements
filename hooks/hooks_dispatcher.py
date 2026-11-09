@@ -42,17 +42,14 @@ for p in (DEV_CEH_SCRIPTS, PLUGIN_CEH_SCRIPTS, HARNESS_DIR, LOCAL_HOOKS_DIR):
 _SAFETY_GATE_AVAILABLE = False
 _SAFETY_GATE_ERROR = None
 try:
-    import guard_destructive
-    evaluate_ceh = guard_destructive.evaluate_command_safety
-    handle_hook_lifecycle = guard_destructive.handle_hook_lifecycle
+    import importlib
+    _hc = importlib.import_module("hook_context")
+    _engine = importlib.import_module("ceh_core.engine")
+    handle_hook_lifecycle = getattr(_hc, "handle_hook_lifecycle")
+    evaluate_ceh = getattr(_engine, "evaluate")
     _SAFETY_GATE_AVAILABLE = True
-except Exception:
-    try:
-        from hook_context import handle_hook_lifecycle
-        from ceh_core.engine import evaluate as evaluate_ceh
-        _SAFETY_GATE_AVAILABLE = True
-    except Exception as e:
-        _SAFETY_GATE_ERROR = e
+except Exception as e:
+    _SAFETY_GATE_ERROR = e
 
 # Elo 2: Scoped Execution Guard
 _SCOPED_GUARD_AVAILABLE = False

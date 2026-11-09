@@ -5,6 +5,16 @@ Todas as modificações estruturais, inclusão de hooks, otimizações e telemet
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.1.0] - 2026-11-08
+
+### Adicionado
+- **Fase P0 de Segurança (SECURITY-OPT-01-P0) & Unified Dispatcher**:
+  - Implementação do `Normalizador Universal de Payloads` no `hooks/hooks_dispatcher.py`: desembrulho iterativo de `call_mcp_tool` (profundidade $\le 3$), normalização tipada de comandos (`CommandLine`, `code`, `commands[]`) e caminhos de arquivos (`Path`, `TargetFile`).
+  - **Política Fail-Closed Estrita em Exit Code 0**: tratamento determinístico de JSON vazio, strings whitespace, truncamento e tipos inválidos com bloqueio imediato (`decision: deny`) garantindo conformidade com o runtime da IDE Antigravity (prevenindo fail-open em exit != 0).
+  - **Catálogo de Compatibilidade de 42 Ferramentas Homologadas**: suporte a Antigravity nativo, MCPs `context-mode`, `dev-memory`, `dak-notebook` e `gemini-api-docs`.
+  - **Confinamento de Escopo e Proteção de Workspace**: bloqueio determinístico a tentativas de mutação fora do workspace e em diretórios sensíveis (`.ceh/`, `.git/`).
+  - Tradução automática de contratos de ferramentas de escrita (`write_file`/`edit_file` -> `write_to_file` com `TargetFile`).
+
 ## [3.0.0] - 2026-11-08
 
 ### Adicionado

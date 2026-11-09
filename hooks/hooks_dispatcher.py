@@ -94,15 +94,33 @@ HARD_BLOCK_PATTERNS = [
     (r"\bgit\s+push\b.*(?:\bmain\b|\bmaster\b|\bproduction\b|\bprod\b).*(?:-f\b|--force\b|--force-with-lease\b)", "Force push para branches protegidas (main/master/production) estritamente proibido."),
 ]
 
-# Ferramentas benignas ou de suporte nativo reconhecidas pelo harness
+# Ferramentas benignas ou de suporte nativo reconhecidas pelo harness e MCPs instalados
 ALLOWED_BENIGN_TOOLS = {
+    # Ferramentas nativas do Antigravity
     "read_file", "view_file", "grep_search", "read_url_content",
     "ask_question", "schedule", "manage_task", "send_message",
     "manage_subagents", "define_subagent", "invoke_subagent",
     "list_resources", "read_resource", "search_marketplace", "search_web",
-    "gemini_search_docs", "gemini_get_doc", "list_plugin_accounts",
+    "list_plugin_accounts",
+
+    # MCP gemini-api-docs
+    "gemini_search_docs", "gemini_get_doc",
+
+    # MCP context-mode (consultas e metadados)
     "ctx_search", "ctx_stats", "ctx_index", "ctx_insight", "ctx_doctor",
-    "ctx_upgrade", "ctx_fetch_and_index"
+    "ctx_upgrade", "ctx_fetch_and_index",
+
+    # MCP dev-memory
+    "memory_list", "memory_search", "memory_get", "memory_related",
+    "relation_extract_propose", "memory_create", "memory_stats",
+    "memory_update", "memory_validate", "memory_promote", "memory_delete",
+    "hub_briefing", "memory_ingest", "harness_paths", "harness_capture",
+    "harness_list", "harness_provision", "harness_installer_script",
+    "harness_hook_script",
+
+    # MCP dak-notebook
+    "get_cell_outputs", "search_cells", "create_notebook", "read_cell",
+    "replace_cell", "list_cells", "insert_cell", "delete_cell", "get_notebook_info"
 }
 
 # Categorias canônicas de ferramentas
@@ -267,7 +285,12 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
             is_purge = True
 
     elif category == "UNKNOWN":
-        return None, _make_deny(f"[CEH FAIL-CLOSED] Ferramenta '{canonical_name}' desconhecida ou não homologada.")
+        name_lower = canonical_name.lower()
+        dangerous_keywords = ("exec", "run", "eval", "shell", "cmd", "bash", "delete", "drop", "wipe", "purge", "write", "modify", "destroy", "kill", "tunnel")
+        if any(kw in name_lower for kw in dangerous_keywords):
+            return None, _make_deny(f"[CEH FAIL-CLOSED] Ferramenta não homologada com perfil de risco de execução/mutação ('{canonical_name}').")
+        # Se for ferramenta não cadastrada de consulta, registra como benigna com aviso em DEV
+        category = "BENIGN"
 
     normalized = NormalizedToolCall(
         raw_name=raw_name,

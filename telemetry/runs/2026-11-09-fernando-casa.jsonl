@@ -1,0 +1,7 @@
+{"ts": "2026-11-09T05:18:24Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 32.5, "rule": null}
+{"ts": "2026-11-09T05:19:56Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 94.76, "rule": null}
+{"ts": "2026-11-09T05:20:01Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 91.54, "rule": null}
+{"ts": "2026-11-09T05:20:11Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 2.93, "rule": null}
+{"ts": "2026-11-09T05:20:16Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 65.18, "rule": null}
+{"ts": "2026-11-09T05:20:23Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 1.43, "rule": null}
+{"ts": "2026-11-09T05:20:29Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 75.19, "rule": null}

@@ -683,13 +683,118 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
     return None, 0
 
 
+def _resolve_terminal_id() -> str:
+    """
+    Descobre o identificador da estação de trabalho respeitando a cascata canônica:
+    1. Variável de ambiente ANTIGRAVITY_TERMINAL ou TERMINAL
+    2. Arquivo global ~/.gemini/config/terminal.id
+    3. Arquivo de projeto .dev-identity.local (lendo TERMINAL="...")
+    4. Fallback: hostname da máquina
+    """
+    env_term = os.environ.get("ANTIGRAVITY_TERMINAL") or os.environ.get("TERMINAL")
+    if env_term and env_term.strip():
+        return env_term.strip()
+
+    global_cfg = Path.home() / ".gemini" / "config" / "terminal.id"
+    if global_cfg.is_file():
+        try:
+            val = global_cfg.read_text(encoding="utf-8").strip()
+            if val:
+                return val
+        except Exception:
+            pass
+
+    try:
+        curr = Path.cwd()
+        for d in [curr, curr.parent]:
+            idfile = d / ".dev-identity.local"
+            if idfile.is_file():
+                content = idfile.read_text(encoding="utf-8")
+                m = re.search(r'TERMINAL=["\']?([^"\'\n]+)["\']?', content)
+                if m:
+                    return m.group(1).strip()
+    except Exception:
+        pass
+
+    try:
+        import socket
+        return socket.gethostname().split(".")[0]
+    except Exception:
+        return "unknown-terminal"
+
+
+def _record_telemetry(raw_input: str, resp_dict: Optional[Dict[str, Any]], exit_code: int, duration_ms: float):
+    """
+    Gravação append-only assíncrona/non-blocking de metadados de telemetria.
+    NUNCA persiste código, comandos brutos, credenciais ou dados corporativos.
+    Fail-safe absoluto: qualquer erro de disco ou I/O é absorvido silenciosamente.
+    """
+    try:
+        terminal_id = _resolve_terminal_id()
+        tool_name = "unknown"
+        if raw_input:
+            try:
+                data = json.loads(raw_input)
+                tool_name = data.get("tool_name") or data.get("toolCall", {}).get("name") or "unknown"
+            except Exception:
+                pass
+
+        decision = "allow"
+        rule_tag = None
+        if resp_dict:
+            decision = resp_dict.get("decision", "allow")
+            reason = resp_dict.get("reason", "")
+            if reason:
+                m = re.match(r"^(\[[A-Z0-9_\-\s]+\])", reason)
+                rule_tag = m.group(1) if m else "BLOCKED_RULE"
+
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        filename = f"{today}-{terminal_id}.jsonl"
+
+        candidates = [
+            Path.home() / "projects" / "antigravity-harness-enhancements" / "telemetry" / "runs",
+            Path.home() / ".gemini" / "antigravity" / "telemetry" / "runs"
+        ]
+        target_dir = None
+        for c in candidates:
+            try:
+                c.mkdir(parents=True, exist_ok=True)
+                target_dir = c
+                break
+            except Exception:
+                continue
+
+        if not target_dir:
+            return
+
+        log_path = target_dir / filename
+        record = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "terminal": terminal_id,
+            "tool": tool_name,
+            "decision": decision,
+            "latency_ms": round(duration_ms, 2),
+            "rule": rule_tag
+        }
+
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def main():
+    start_time = time.time()
     try:
         raw_input = sys.stdin.read()
     except Exception:
         raw_input = ""
 
     resp_dict, exit_code = evaluate_all(raw_input)
+    duration_ms = (time.time() - start_time) * 1000.0
+
+    _record_telemetry(raw_input, resp_dict, exit_code, duration_ms)
+
     if resp_dict is not None:
         sys.stdout.write(json.dumps(resp_dict, ensure_ascii=False))
         sys.exit(exit_code)

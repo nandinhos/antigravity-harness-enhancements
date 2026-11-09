@@ -1,52 +1,50 @@
 #!/usr/bin/env python3
 """
-hooks_dispatcher.py — Unified Guardrails Dispatcher com Normalizador Universal P0
-Antigravity Engineering Lab & Harness Enhancements (SECURITY-OPT-01 — Fase P0)
+SECURITY-OPT-01 — Unified Guardrails Dispatcher (Fase P0.1 Corrective Hardening)
+Antigravity Engineering Lab / CEH Optimization Layer
 
-Responsabilidades do Dispatcher Monoprocesso:
-  1. Fail-Closed Rigoroso: Validação estrita de sintaxe, tipos, payloads vazios e erros com exit 0 + deny.
-  2. Normalizador Universal de Payloads: Desembrulho iterativo de 'call_mcp_tool', normalização tipada
-     de comandos ('CommandLine', 'code', 'commands[]') e caminhos ('Path', 'TargetFile').
-  3. Confinamento de Escopo & Proteção de Filesystem: Bloqueio de escape do workspace, proteção de .ceh/ e .git/.
-  4. Elo 1 (CEH Safety Gate): Governança de destruição, ambientes (DEV/HML/PRD) e chamadas de SO embutidas.
-  5. Elo 2 (Scoped Execution Guard): Bloqueio determinístico de varreduras na raiz (find /, grep -r /).
-  6. Elo 3 (Smart Advisory Router): Roteamento delimitado silencioso e consulta context-mode com timeout estrito.
-
-Contrato com a IDE Antigravity:
-  Toda decisão estruturada ('allow' silencioso ou 'deny' com justificativa) DEVE retornar exit code 0.
-  Códigos de saída != 0 são interpretados pela IDE como falha de infraestrutura, resultando em bypass (fail-open).
+Implementa:
+  1. Normalizador Universal de Payloads (preservando envelopes, profundidade e proveniência).
+  2. Classificação Explícita de Linguagem (SHELL, PYTHON, JAVASCRIPT, UNKNOWN, OTHER) sem suposições implícitas.
+  3. Inspeção Estruturada via AST de Python (módulo ast) para chamadas de SO, subprocessos e metaprogramação.
+  4. Inspeção Semântica de JavaScript e Shell com Delimitadores Lexicais Expandidos.
+  5. Política Fail-Closed Estrita em Exit Code 0 com Tratamento de Código UNINSPECTABLE.
+  6. Confinamento de Filesystem e Proteção de Workspace (.ceh/, .git/, caminhos absolutos).
+  7. Catálogo de 42 Ferramentas Mapeadas e Heurística Conservadora para Ferramentas Desconhecidas.
 """
 
-from __future__ import annotations
 import sys
 import os
-import re
 import json
+import re
+import ast
+import time
 import subprocess
-from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Tuple, Optional
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple, List, Set
 
-# Inclusão de caminhos de módulos (prioriza repositório dev se presente, com fallback para plugin ativo)
-DEV_CEH_SCRIPTS = Path("/home/nandodev/projects/clearer-engineering-harness/clearer-engineering/scripts")
-PLUGIN_CEH_SCRIPTS = Path("/home/nandodev/.gemini/config/plugins/clearer-engineering/scripts")
-HOOKS_CONFIG_DIR = Path("/home/nandodev/.gemini/config/hooks")
-LOCAL_HOOKS_DIR = Path(__file__).resolve().parent
+# Constantes de Versão e Governança
+DISPATCHER_VERSION = "0.9.1-p0.1"
+MAX_WRAPPER_DEPTH = 3
 
-for p in (DEV_CEH_SCRIPTS, PLUGIN_CEH_SCRIPTS, HOOKS_CONFIG_DIR, LOCAL_HOOKS_DIR):
-    if p.is_dir() and str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+# Localização e carregamento dos módulos do harness
+HARNESS_DIR = Path("/home/nandodev/.gemini/config/hooks")
+if str(HARNESS_DIR) not in sys.path:
+    sys.path.insert(0, str(HARNESS_DIR))
 
-# Importação dos módulos de governança e segurança
+# Elo 1: CEH Safety Gate (destructive_command_guardrail)
 _SAFETY_GATE_AVAILABLE = False
 _SAFETY_GATE_ERROR = None
 try:
-    from hook_context import handle_hook_lifecycle
-    from ceh_core.engine import evaluate as evaluate_ceh, evaluate_command, Request, Decision, is_protected_target
+    import guard_destructive
+    evaluate_ceh = guard_destructive.evaluate_command_safety
+    handle_hook_lifecycle = guard_destructive.handle_hook_lifecycle
     _SAFETY_GATE_AVAILABLE = True
 except Exception as e:
     _SAFETY_GATE_ERROR = e
 
+# Elo 2: Scoped Execution Guard
 _SCOPED_GUARD_AVAILABLE = False
 _SCOPED_GUARD_ERROR = None
 try:
@@ -56,6 +54,7 @@ try:
 except Exception as e:
     _SCOPED_GUARD_ERROR = e
 
+# Elo 3: Smart Advisory Router (context-mode)
 _ADVISORY_ROUTER_AVAILABLE = False
 _ADVISORY_ROUTER_ERROR = None
 try:
@@ -65,23 +64,23 @@ try:
 except Exception as e:
     _ADVISORY_ROUTER_ERROR = e
 
+# Delimitadores lexicais para fronteiras de comandos em código (espaço, aspas, parênteses, ponto-e-vírgula ou fim de linha)
+_PATH_BOUNDARY = r"(?:['\";\)\]\}\s]|$)"
+
 # Padrões catastróficos imediatos (Hard Blocks em memória)
 HARD_BLOCK_PATTERNS = [
     # Filesystem / SO Catastrófico
-    (r"\brm\s+-[rRfF]*\s+(?:/|~|\$HOME)(?:\s|$)", "Tentativa de exclusão catastrófica da raiz ou home do sistema."),
+    (r"\brm\s+-[rRfF]*\s+(?:/|~|\$HOME)(?:" + _PATH_BOUNDARY + r")", "Tentativa de exclusão catastrófica da raiz ou home do sistema."),
     (r"\brm\s+-[rRfF]*\s+\.git\b", "Tentativa de exclusão do diretório de versionamento Git (.git)."),
     (r"\bmkfs\b", "Comando de formatação de sistema de arquivos (mkfs) não permitido."),
     (r"\bdd\s+if=", "Comando de baixo nível 'dd' não permitido."),
-    (r"\bchmod\s+-[rRfF]*\s+777\s+/(?:\s|$)", "Permissões abertas e inseguras (chmod 777 /) não permitidas."),
+    (r"\bchmod\s+-[rRfF]*\s+777\s+/(?:" + _PATH_BOUNDARY + r")", "Permissões abertas e inseguras (chmod 777 /) não permitidas."),
     (r":\(\)\s*\{\s*:\|:&\s*\};:", "Fork bomb detectada e bloqueada."),
 
     # Banco de Dados - Artisan / Laravel Destrutivo
-    (r"\bphp\s+artisan\s+migrate:fresh\b", "Comando destrutivo 'migrate:fresh' apagaria todas as tabelas e dados. Use 'migrate' incremental."),
-    (r"\bphp\s+artisan\s+migrate:reset\b", "Comando 'migrate:reset' reverteria todas as migrações. Operação proibida."),
-    (r"\bphp\s+artisan\s+db:wipe\b", "Comando 'db:wipe' apagaria completamente o banco de dados. Operação proibida."),
-    (r"\bartisan\s+migrate:fresh\b", "Comando 'migrate:fresh' apagaria todas as tabelas e dados. Operação proibida."),
-    (r"\bartisan\s+migrate:reset\b", "Comando 'migrate:reset' reverteria todas as migrações. Operação proibida."),
-    (r"\bartisan\s+db:wipe\b", "Comando 'db:wipe' apagaria o banco de dados. Operação proibida."),
+    (r"\b(?:php\s+)?artisan\s+migrate:fresh\b", "Comando destrutivo 'migrate:fresh' apagaria todas as tabelas e dados. Use 'migrate' incremental."),
+    (r"\b(?:php\s+)?artisan\s+migrate:reset\b", "Comando 'migrate:reset' reverteria todas as migrações. Operação proibida."),
+    (r"\b(?:php\s+)?artisan\s+db:wipe\b", "Comando 'db:wipe' apagaria completamente o banco de dados. Operação proibida."),
 
     # Banco de Dados - SQL Destrutivo direto
     (r"\bDROP\s+DATABASE\b", "Comando SQL 'DROP DATABASE' não permitido."),
@@ -143,10 +142,14 @@ class NormalizedToolCall:
     raw_name: str
     canonical_name: str
     category: str
+    depth: int = 0
     commands: List[str] = field(default_factory=list)
     target_paths: List[str] = field(default_factory=list)
     cwd: Optional[str] = None
-    language: Optional[str] = None
+    language_declared: Optional[str] = None
+    language_classified: str = "UNKNOWN"  # "SHELL", "PYTHON", "JAVASCRIPT", "UNKNOWN", "OTHER"
+    language_source: str = "UNRESOLVED"   # "DECLARED", "TOOL_CONTRACT", "AST_VERIFIED", "LEXICAL_HEURISTIC", "UNRESOLVED"
+    missing_fields: List[str] = field(default_factory=list)
     is_purge_destructive: bool = False
     original_args: Dict[str, Any] = field(default_factory=dict)
     workspace_paths: List[str] = field(default_factory=list)
@@ -157,14 +160,226 @@ def _make_deny(reason: str) -> Tuple[Dict[str, Any], int]:
     return {"decision": "deny", "reason": reason}, 0
 
 
+def classify_language(canonical_name: str, code_snippet: str, declared_lang: Optional[str]) -> Tuple[str, str]:
+    """
+    Classificação explícita de linguagem sem inferências cegas.
+    Retorna (language_classified, language_source).
+    Linguagens: "SHELL", "PYTHON", "JAVASCRIPT", "UNKNOWN", "OTHER".
+    Fontes: "DECLARED", "TOOL_CONTRACT", "AST_VERIFIED", "LEXICAL_HEURISTIC", "UNRESOLVED".
+    """
+    if canonical_name == "run_command":
+        return "SHELL", "TOOL_CONTRACT"
+
+    code_clean = code_snippet.strip()
+    if not code_clean:
+        return "UNKNOWN", "EMPTY_CODE"
+
+    # 1. Metadado explicitamente fornecido
+    if declared_lang is not None and str(declared_lang).strip():
+        decl = str(declared_lang).strip().lower()
+        if decl in ("python", "py", "python3"):
+            return "PYTHON", "DECLARED"
+        elif decl in ("javascript", "typescript", "js", "ts", "node"):
+            return "JAVASCRIPT", "DECLARED"
+        elif decl in ("shell", "bash", "sh", "zsh"):
+            return "SHELL", "DECLARED"
+        else:
+            return "OTHER", "DECLARED"
+
+    # 2. Ausência de metadado: Nunca pressupor shell silenciosamente!
+    # 2.1 Análise via AST de Python
+    try:
+        tree = ast.parse(code_clean)
+        is_python_indicator = False
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                is_python_indicator = True
+                break
+            if isinstance(node, ast.Call):
+                is_python_indicator = True
+                break
+            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                is_python_indicator = True
+                break
+            if isinstance(node, (ast.If, ast.For, ast.While, ast.Try, ast.With)):
+                is_python_indicator = True
+                break
+
+        if is_python_indicator:
+            return "PYTHON", "AST_VERIFIED"
+    except SyntaxError:
+        pass
+
+    # 2.2 Análise Léxica de JavaScript / TypeScript
+    js_patterns = [
+        r"\b(?:const|let|var)\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=",
+        r"\brequire\s*\(\s*['\"][^'\"]+['\"]\s*\)",
+        r"\bimport\s+.*\s+from\s+['\"][^'\"]+['\"]",
+        r"\bfunction\s*[a-zA-Z_$]*\s*\(",
+        r"\bconsole\.(?:log|error|warn|info|debug)\s*\(",
+        r"\bprocess\.(?:env|exit|argv|stdout)\b",
+        r"=>\s*\{?",
+        r"\bchild_process\b",
+    ]
+    if any(re.search(pat, code_clean) for pat in js_patterns):
+        return "JAVASCRIPT", "LEXICAL_HEURISTIC"
+
+    # 2.3 Análise Léxica de Comandos Shell Atômicos
+    shell_command_names = (
+        "echo", "git", "cd", "ls", "cat", "grep", "find", "mkdir", "rm", "cp", "mv",
+        "curl", "wget", "docker", "cargo", "npm", "pnpm", "yarn", "composer", "php",
+        "python", "python3", "which", "chmod", "chown", "tar", "gzip", "sed", "awk"
+    )
+    shell_pattern = r"(?:^|[;&|]\s*)(?:" + "|".join(shell_command_names) + r")\b"
+    if re.search(shell_pattern, code_clean) and not re.search(r"[:=]\s*", code_clean):
+        return "SHELL", "LEXICAL_HEURISTIC"
+
+    # 3. Análise inconclusiva
+    return "UNKNOWN", "UNRESOLVED"
+
+
+def _get_func_qualname(node: ast.AST) -> str:
+    """Extrai recursivamente o nome qualificado de uma função na AST (ex: 'os.system')."""
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Attribute):
+        parent = _get_func_qualname(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return ""
+
+
+def inspect_python_code(code_str: str) -> Tuple[str, Optional[str]]:
+    """
+    Inspeção estática estruturada via AST de Python (módulo ast padrão).
+    Retorna (verdict, reason):
+      - ("DENY", reason): Violação de segurança determinística encontrada.
+      - ("UNINSPECTABLE", reason): Metaprogramação opaca ou não compilável.
+      - ("ALLOW", None): Código analisado com sucesso e limpo.
+    """
+    try:
+        tree = ast.parse(code_str)
+    except SyntaxError as e:
+        return "UNINSPECTABLE", f"Código Python com sintaxe inválida ou fragmento opaco: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func_name = _get_func_qualname(node.func)
+
+            # A. Chamadas diretas de SO / Processos
+            if func_name in (
+                "os.system", "os.popen", "os.kill",
+                "subprocess.run", "subprocess.call", "subprocess.Popen",
+                "subprocess.check_output", "subprocess.check_call"
+            ):
+                if node.args:
+                    first_arg = node.args[0]
+                    if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                        cmd_literal = first_arg.value.strip()
+                        # Avalia contra HARD_BLOCK_PATTERNS
+                        for pattern, reason in HARD_BLOCK_PATTERNS:
+                            if re.search(pattern, cmd_literal, re.IGNORECASE):
+                                return "DENY", f"[CEH MCP PYTHON SECURITY] Chamada destrutiva em {func_name}: {reason} ('{cmd_literal}')"
+                        # Avalia contra Scoped Execution Guard
+                        if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_literal):
+                            return "DENY", f"[CEH MCP PYTHON SECURITY] Varredura não delimitada em {func_name}: '{cmd_literal}'"
+                    else:
+                        return "UNINSPECTABLE", f"Chamada a {func_name} com comando dinâmico ou variável não estática."
+                else:
+                    return "UNINSPECTABLE", f"Chamada a {func_name} sem argumentos explícitos."
+
+            # B. Deleção direta de caminhos / filesystem
+            if func_name in ("shutil.rmtree", "os.remove", "os.unlink", "os.rmdir", "shutil.move"):
+                if node.args:
+                    first_arg = node.args[0]
+                    if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                        path_literal = first_arg.value.strip()
+                        if path_literal in ("/", "~", "$HOME") or any(path_literal.startswith(d) for d in ("/etc", "/root", "/sys", "/proc", "/bin", "/usr")):
+                            return "DENY", f"[CEH MCP PYTHON SECURITY] Tentativa de exclusão de caminho crítico do sistema em {func_name} ('{path_literal}')."
+                        if re.search(r"(?:^|/)\.(?:git|ceh)(?:/|$)", path_literal, re.IGNORECASE):
+                            return "DENY", f"[CEH MCP PYTHON SECURITY] Tentativa de exclusão de diretório protegido ({path_literal}) em {func_name}."
+                    else:
+                        return "UNINSPECTABLE", f"Chamada a {func_name} com caminho dinâmico não estático."
+
+            # B. Metaprogramação opaca e evasiva
+            if func_name in ("eval", "exec", "__import__", "compile"):
+                return "UNINSPECTABLE", f"Uso de função de execução dinâmica/metaprogramação '{func_name}' sem sandbox."
+
+            # C. Tentativa de escrita direta via open() em arquivos protegidos
+            if func_name == "open" and node.args:
+                first_arg = node.args[0]
+                if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                    path_val = first_arg.value.strip()
+                    mode_val = "r"
+                    if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                        mode_val = node.args[1].value.strip()
+                    for kw in node.keywords:
+                        if kw.arg == "mode" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                            mode_val = kw.value.value.strip()
+                    if any(m in mode_val for m in ("w", "a", "x", "+")):
+                        if re.search(r"(?:^|/)\.(?:ceh|git)(?:/|$)", path_val, re.IGNORECASE):
+                            return "DENY", f"[CEH MCP PYTHON SECURITY] Tentativa de escrita em diretório protegido ({path_val}) via open()."
+
+    return "ALLOW", None
+
+
+def inspect_javascript_code(code_str: str) -> Tuple[str, Optional[str]]:
+    """
+    Inspeção estática de código JavaScript / Node.js.
+    """
+    # 1. Metaprogramação opaca
+    if re.search(r"\b(?:eval|Function)\s*\(", code_str):
+        return "UNINSPECTABLE", "Uso de eval/Function dinâmica em JavaScript sem sandbox."
+
+    # 2. Chamadas a child_process com literais
+    js_proc_calls = re.findall(r"(?:execSync|exec|spawn|spawnSync)\s*\(\s*(['\"][^'\"]+['\"])", code_str)
+    for call_arg in js_proc_calls:
+        cmd_unquoted = call_arg.strip(" '\"\t\r\n")
+        for pattern, reason in HARD_BLOCK_PATTERNS:
+            if re.search(pattern, cmd_unquoted, re.IGNORECASE):
+                return "DENY", f"[CEH MCP JS SECURITY] Execução destrutiva em child_process: {reason} ('{cmd_unquoted}')"
+        if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_unquoted):
+            return "DENY", f"[CEH MCP JS SECURITY] Varredura não delimitada em child_process: '{cmd_unquoted}'"
+
+    # 3. Chamada a child_process com variáveis dinâmicas
+    if re.search(r"(?:execSync|exec|spawn|spawnSync)\s*\(\s*[^'\"\s)]+", code_str) and not js_proc_calls:
+        return "UNINSPECTABLE", "Chamada a child_process com comando dinâmico em JavaScript."
+
+    return "ALLOW", None
+
+
+def inspect_shell_code(cmd_str: str) -> Tuple[str, Optional[str]]:
+    """
+    Inspeção estática de comandos shell.
+    """
+    cmd_clean = cmd_str.strip()
+    if not cmd_clean:
+        return "ALLOW", None
+
+    for pattern, reason in HARD_BLOCK_PATTERNS:
+        if re.search(pattern, cmd_clean, re.IGNORECASE):
+            return "DENY", f"[GUARDRAIL BLOQUEOU]: {reason}\nComando/Código rejeitado: '{cmd_clean[:100]}'"
+
+    if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_clean):
+        return "DENY", f"[SCOPED GUARD BLOQUEOU]: Varredura irrestrita no sistema detectada ('{cmd_clean[:100]}'). Confinamento ao workspace violado."
+
+    return "ALLOW", None
+
+
+def check_raw_destructive_patterns(raw_text: str) -> Optional[str]:
+    """Varredura de padrões catastróficos imediatos em qualquer string bruta de comando/código."""
+    for pattern, reason in HARD_BLOCK_PATTERNS:
+        if re.search(pattern, raw_text, re.IGNORECASE):
+            return f"[GUARDRAIL BLOQUEOU]: {reason}\nTrecho rejeitado: '{raw_text[:100]}'"
+    return None
+
+
 def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Optional[Tuple[Dict[str, Any], int]]]:
     """
-    Normalizador Universal de Payloads (Fase P0).
-    Realiza validação sintática, tipada, desembrulho de call_mcp_tool e extração estruturada.
-    Retorna (normalized_tool_call, error_tuple). Se error_tuple for preenchido, encerra imediatamente.
+    Normalizador Universal de Payloads (Fase P0.1).
+    Preserva envelopes originais, profundidade, procedência e realiza classificação explícita de linguagem.
     """
-    if raw_input is None or not raw_input.strip():
-        return None, _make_deny("[CEH FAIL-CLOSED] Payload vazio ou ausente recebido pelo hook PreToolUse.")
+    if not raw_input or not raw_input.strip():
+        return None, _make_deny("[CEH FAIL-CLOSED] Entrada vazia ou nula recebida no PreToolUse.")
 
     try:
         payload = json.loads(raw_input)
@@ -197,7 +412,7 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
     curr_args = args
     depth = 0
 
-    while curr_name == "call_mcp_tool" and depth < 3:
+    while curr_name == "call_mcp_tool" and depth < MAX_WRAPPER_DEPTH:
         depth += 1
         inner_tool = curr_args.get("ToolName")
         inner_args = curr_args.get("Arguments")
@@ -221,7 +436,8 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
     commands: List[str] = []
     target_paths: List[str] = []
     cwd: Optional[str] = curr_args.get("Cwd") or curr_args.get("cwd")
-    language: Optional[str] = curr_args.get("language")
+    declared_lang: Optional[str] = curr_args.get("language")
+    missing_fields: List[str] = []
     is_purge = False
 
     # Validação e extração tipada por categoria de ferramenta
@@ -231,14 +447,9 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
             return None, _make_deny("[CEH FAIL-CLOSED] 'run_command' exige o argumento obrigatório 'CommandLine'.")
         if not isinstance(cmd_line, str):
             return None, _make_deny("[CEH FAIL-CLOSED] 'CommandLine' em 'run_command' deve ser uma string.")
-        if not cmd_line.strip():
-            # Comando vazio em run_command
-            commands = [""]
-        else:
-            commands = [cmd_line]
+        commands = [cmd_line]
 
     elif canonical_name in ("write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content"):
-        # Suporte unificado: Path (nativo atual) ou TargetFile (legado)
         target = curr_args.get("Path") or curr_args.get("TargetFile")
         if target is None:
             return None, _make_deny(f"[CEH FAIL-CLOSED] Ferramenta de escrita '{canonical_name}' sem caminho de arquivo alvo (Path/TargetFile).")
@@ -255,6 +466,8 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
         if not isinstance(code_str, str):
             return None, _make_deny("[CEH FAIL-CLOSED] Argumento 'code' em 'ctx_execute' deve ser uma string.")
         commands = [code_str]
+        if declared_lang is None:
+            missing_fields.append("language")
 
     elif canonical_name == "ctx_execute_file":
         code_str = curr_args.get("code")
@@ -265,6 +478,8 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
             return None, _make_deny("[CEH FAIL-CLOSED] 'code' e 'path' em 'ctx_execute_file' devem ser strings.")
         commands = [code_str]
         target_paths = [file_path.strip()]
+        if declared_lang is None:
+            missing_fields.append("language")
 
     elif canonical_name == "ctx_batch_execute":
         batch_cmds = curr_args.get("commands")
@@ -289,17 +504,24 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
         dangerous_keywords = ("exec", "run", "eval", "shell", "cmd", "bash", "delete", "drop", "wipe", "purge", "write", "modify", "destroy", "kill", "tunnel")
         if any(kw in name_lower for kw in dangerous_keywords):
             return None, _make_deny(f"[CEH FAIL-CLOSED] Ferramenta não homologada com perfil de risco de execução/mutação ('{canonical_name}').")
-        # Se for ferramenta não cadastrada de consulta, registra como benigna com aviso em DEV
         category = "BENIGN"
+
+    # Classificação explícita de linguagem
+    primary_code = commands[0] if commands else ""
+    lang_classified, lang_source = classify_language(canonical_name, primary_code, declared_lang)
 
     normalized = NormalizedToolCall(
         raw_name=raw_name,
         canonical_name=canonical_name,
         category=category,
+        depth=depth,
         commands=commands,
         target_paths=target_paths,
         cwd=cwd,
-        language=language,
+        language_declared=declared_lang,
+        language_classified=lang_classified,
+        language_source=lang_source,
+        missing_fields=missing_fields,
         is_purge_destructive=is_purge,
         original_args=curr_args,
         workspace_paths=[str(p) for p in workspace_paths if p]
@@ -309,34 +531,20 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
 
 def validate_path_confinement(paths: List[str], cwd: Optional[str], workspace_paths: List[str]) -> Optional[str]:
     """
-    Valida confinamento de caminhos de arquivos contra:
-      1. Caracteres nulos (\0) e injeção lexical.
-      2. Certificados protegidos de CI (.ceh/last-ci-run.json, etc.).
-      3. Estruturas internas do Git (.git/).
-      4. Diretórios restritos do sistema (/etc, /root, /boot, /sys, /proc, /usr, /bin, /sbin).
-      5. Escape dos limites do workspace via traversal (..).
-    Retorna mensagem de erro para bloqueio imediato ou None se válido.
+    Valida confinamento de filesystem e diretórios protegidos (.ceh, .git, /etc, /root, etc.).
     """
-    ws_root: Optional[Path] = None
-    if workspace_paths:
-        try:
-            ws_root = Path(workspace_paths[0]).resolve()
-        except Exception:
-            ws_root = None
-    if ws_root is None:
-        ws_root = Path.cwd().resolve()
+    if not paths:
+        return None
 
-    base_dir = Path(cwd).resolve() if cwd and os.path.isabs(cwd) else ws_root
+    base_dir = Path(cwd) if cwd else Path.cwd()
+    ws_root = Path(workspace_paths[0]).resolve() if workspace_paths else None
 
     for raw_p in paths:
-        if "\0" in raw_p:
-            return f"[CEH PATH SAFETY] Caractere nulo detectado no caminho '{raw_p}'."
+        clean = raw_p.strip()
+        if not clean:
+            continue
 
-        clean = raw_p.replace("\\", "/").strip("'\"")
-
-        # 1. Proteção de certificados de CI e pasta .ceh/
-        if any(sig in clean.lower() for sig in ("last-ci-run.json", "last-ci-run.log", "last-evals-run.json")):
-            return f"[CEH CERTIFICATE INTEGRITY - G9] ⛔ Tentativa de escrita/modificação de certificado de CI ({clean}). Arquivos sob .ceh/ são imutáveis."
+        # 1. Proteção de integridade dos certificados CEH (.ceh/)
         if re.search(r"(?:^|/)\.ceh(?:/|$)", clean, re.IGNORECASE):
             return f"[CEH CERTIFICATE INTEGRITY - G9] ⛔ Modificação em arquivos sob .ceh/ ({clean}) bloqueada por governança de CI."
 
@@ -369,92 +577,71 @@ def validate_path_confinement(paths: List[str], cwd: Optional[str], workspace_pa
     return None
 
 
-def inspect_command_safety(command_str: str, language: Optional[str] = None) -> Optional[str]:
-    """
-    Inspeção estática poliglota de comandos e código para PreToolUse:
-      1. Varredura contra HARD_BLOCK_PATTERNS (catastróficos, migrate:fresh, db:wipe, DROP DATABASE).
-      2. Varredura de chamadas de SO de linguagens de script (Python, Node/JS, PHP) se language != shell.
-      3. Verificação contra Scoped Execution Guard (find / irrestrito).
-    Retorna mensagem de motivo de bloqueio ou None se seguro.
-    """
-    cmd_clean = command_str.strip()
-    if not cmd_clean:
-        return None
-
-    # 1. Checagem de padrões catastróficos imediatos na string bruta
-    for pattern, reason in HARD_BLOCK_PATTERNS:
-        if re.search(pattern, cmd_clean, re.IGNORECASE):
-            return f"[GUARDRAIL BLOQUEOU]: {reason}\nComando/Código rejeitado: '{cmd_clean[:100]}'"
-
-    # 2. Se for código em linguagens de script (Python, Node, PHP), inspecionar chamadas de SO
-    lang = (language or "shell").lower()
-    if lang in ("python", "py"):
-        # Detecta chamadas a subprocessos executando comandos destrutivos
-        py_os_calls = re.findall(r"(?:os\.system|subprocess\.(?:run|call|Popen|check_output)|shutil\.rmtree)\s*\(([^)]+)\)", cmd_clean)
-        for call_arg in py_os_calls:
-            unquoted = call_arg.strip(" '\"\t\r\n")
-            for pattern, reason in HARD_BLOCK_PATTERNS:
-                if re.search(pattern, unquoted, re.IGNORECASE) or re.search(pattern, call_arg, re.IGNORECASE):
-                    return f"[CEH MCP SECURITY]: Execução destrutiva embutida em Python bloqueada: {reason}"
-    elif lang in ("javascript", "typescript", "js", "ts"):
-        # Detecta chamadas a child_process executando comandos destrutivos
-        js_os_calls = re.findall(r"(?:execSync|exec|spawn|spawnSync)\s*\(([^)]+)\)", cmd_clean)
-        for call_arg in js_os_calls:
-            unquoted = call_arg.strip(" '\"\t\r\n")
-            for pattern, reason in HARD_BLOCK_PATTERNS:
-                if re.search(pattern, unquoted, re.IGNORECASE) or re.search(pattern, call_arg, re.IGNORECASE):
-                    return f"[CEH MCP SECURITY]: Execução destrutiva embutida em Node/JS bloqueada: {reason}"
-
-    # 3. Verificação de varreduras não delimitadas via Scoped Execution Guard
-    if _SCOPED_GUARD_AVAILABLE:
-        if check_unbounded_scan(cmd_clean):
-            return "[OPT-002 SCOPED EXECUTION] Varredura recursiva não delimitada bloqueada. Especifique um subdiretório do projeto ou utilize '-maxdepth 3' para evitar sobrecarga de I/O."
-
-    return None
-
-
 def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
     """
-    Ponto de entrada unificado para avaliação PreToolUse com arquitetura P0:
-      1. Normalização universal e validação de schema (fail-closed).
-      2. Confinamento de caminhos e integridade de certificados/Git.
-      3. Avaliação de segurança (CEH Safety Gate + Scoped Guard).
-      4. Roteamento de contexto delimitado vs context-mode com timeout estrito.
+    Orquestrador Central do Unified Guardrails Dispatcher (Fase P0.1).
+    Aplica: Normalização -> Confinamento -> Avaliação de Código (AST/Léxica) -> Safety Gate -> Advisory.
     """
-    normalized, err = normalize_payload(raw_input)
-    if err is not None:
-        return err
+    # Elo 0: Normalizador Universal de Payloads
+    normalized, err_deny = normalize_payload(raw_input)
+    if err_deny:
+        return err_deny
 
     assert normalized is not None
 
-    # Operação de wipe destrutivo em ctx_purge
+    # Elo de Purge destrutivo em context-mode
     if normalized.is_purge_destructive:
-        return _make_deny("[CEH DATA INTEGRITY] ctx_purge com scope 'project' apagaria a base de dados do projeto. Operação proibida por guardrail de governança.")
+        return _make_deny("[CEH MCP PURGE GUARD] Operação 'ctx_purge' em escopo de projeto bloqueada. Operação destrutiva não autorizada.")
 
-    # Confinamento de arquivos (se houver alvos de path)
+    # Elo de Confinamento de Filesystem
     if normalized.target_paths:
         path_err = validate_path_confinement(normalized.target_paths, normalized.cwd, normalized.workspace_paths)
         if path_err:
             return _make_deny(path_err)
 
-    # Avaliação de comandos e código
-    for cmd in normalized.commands:
-        sec_err = inspect_command_safety(cmd, normalized.language)
-        if sec_err:
-            return _make_deny(sec_err)
+    # Elo de Avaliação de Comandos e Código (TERMINAL e MCP_EXEC)
+    if normalized.category in ("TERMINAL", "MCP_EXEC"):
+        for cmd in normalized.commands:
+            verdict = "ALLOW"
+            reason = None
+
+            if normalized.category == "TERMINAL":
+                verdict, reason = inspect_shell_code(cmd)
+
+            elif normalized.category == "MCP_EXEC":
+                lang = normalized.language_classified
+                if lang == "PYTHON":
+                    verdict, reason = inspect_python_code(cmd)
+                elif lang == "JAVASCRIPT":
+                    verdict, reason = inspect_javascript_code(cmd)
+                elif lang == "SHELL":
+                    verdict, reason = inspect_shell_code(cmd)
+                else:  # UNKNOWN ou OTHER
+                    # REGRA ARQUITETURAL: Ausência de metadados não deve implicar ausência de risco
+                    raw_err = check_raw_destructive_patterns(cmd)
+                    if raw_err:
+                        verdict, reason = "DENY", raw_err
+                    else:
+                        verdict, reason = "UNINSPECTABLE", (
+                            f"Código em '{normalized.canonical_name}' com linguagem não determinada "
+                            f"('{lang}') ou sem suporte a inspeção estática segura sem sandbox."
+                        )
+
+            if verdict == "DENY":
+                return _make_deny(reason or "Comando ou código destrutivo rejeitado.")
+            elif verdict == "UNINSPECTABLE":
+                return _make_deny(f"[CEH UNINSPECTABLE - P0.1] Execução de código arbitrário bloqueada: {reason}")
 
     # Elo 1: CEH Safety Gate para run_command e ferramentas de escrita
     if _SAFETY_GATE_AVAILABLE and normalized.canonical_name in ("run_command", "write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content"):
         try:
-            # Normalização de compatibilidade com o AntigravityAdapter:
-            # Mapeia write_file/edit_file para write_to_file com TargetFile para suportar qualquer versão de runtime
             adapter_tool_name = "write_to_file" if normalized.canonical_name in ("write_file", "edit_file") else normalized.canonical_name
             adapter_args = dict(normalized.original_args)
             if normalized.target_paths and "TargetFile" not in adapter_args:
                 adapter_args["TargetFile"] = normalized.target_paths[0]
 
             adapter_payload = {
-                "session_id": "hooks-dispatcher-p0",
+                "session_id": "hooks-dispatcher-p01",
                 "hook_event_name": "PreToolUse",
                 "workspacePaths": normalized.workspace_paths,
                 "toolCall": {
@@ -465,7 +652,6 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
             resp_dict, exit_code = handle_hook_lifecycle(json.dumps(adapter_payload), evaluate_ceh)
             dec = resp_dict.get("decision", "allow")
             if dec in ("deny", "ask"):
-                # Antigravity exige exit code 0 para processar o JSON de negação
                 return resp_dict, 0
         except Exception as e:
             return _make_deny(f"[CEH SAFETY GATE ERROR] Exceção na validação de governança ({e}). Execução bloqueada (fail-closed).")
@@ -476,7 +662,6 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
         if is_deliberately_bounded(cmd_to_route):
             return None, 0
 
-        # Delegação ao context-mode com timeout estrito de 250ms
         try:
             proc = subprocess.run(
                 ["context-mode", "hook", "antigravity-cli", "pretooluse"],
@@ -492,10 +677,9 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                 except Exception:
                     pass
         except Exception:
-            # Falha de timeout ou ausência do context-mode: não bloqueia (advisory non-blocking)
             return None, 0
 
-    # Todas as salvaguardas passaram: libera execução
+    # Todas as salvaguardas passaram: libera execução silenciosa
     return None, 0
 
 
@@ -510,7 +694,6 @@ def main():
         sys.stdout.write(json.dumps(resp_dict, ensure_ascii=False))
         sys.exit(exit_code)
     else:
-        # Permissão silenciosa normal (exit 0)
         sys.exit(0)
 
 

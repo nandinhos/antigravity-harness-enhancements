@@ -5,6 +5,16 @@ Todas as modificações estruturais, inclusão de hooks, otimizações e telemet
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.2.0] - 2026-11-08
+
+### Adicionado
+- **Hardening Corretivo P0.1 & Inspeção Estruturada AST (SECURITY-OPT-01-P01)**:
+  - **Eliminação da Suposição Implícita de Linguagem**: remoção de `language or "shell"` em favor de classificação explícita de 4 estados (`SHELL`, `PYTHON`, `JAVASCRIPT`, `UNKNOWN`).
+  - **Inspeção Estruturada via AST de Python (`ast.parse`)**: varredura da árvore sintática para chamadas a `os.system`, `subprocess.*`, `shutil.rmtree` e escritas via `open()` em diretórios protegidos.
+  - **Política Fail-Closed para Código `UNINSPECTABLE`**: bloqueio conservador para metaprogramação opaca (`eval`, `exec`) ou linguagens não determinadas na ausência de sandbox de runtime.
+  - **Fronteiras Léxicas Expandidas**: suporte a delimitadores de string literal (`['\";\)\]\}\s]`) para captura de comandos destrutivos embutidos.
+  - **Resolução da Fixture OP-06**: eliminação de falsos negativos em chamadas MCP sem atributo `language`.
+
 ## [3.1.0] - 2026-11-08
 
 ### Adicionado

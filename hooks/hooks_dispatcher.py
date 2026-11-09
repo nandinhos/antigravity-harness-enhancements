@@ -435,7 +435,7 @@ def normalize_payload(raw_input: str) -> Tuple[Optional[NormalizedToolCall], Opt
 
     commands: List[str] = []
     target_paths: List[str] = []
-    cwd: Optional[str] = curr_args.get("Cwd") or curr_args.get("cwd")
+    cwd: Optional[str] = curr_args.get("Cwd") or curr_args.get("cwd") or payload.get("cwd") or payload.get("Cwd")
     declared_lang: Optional[str] = curr_args.get("language")
     missing_fields: List[str] = []
     is_purge = False
@@ -536,7 +536,7 @@ def validate_path_confinement(paths: List[str], cwd: Optional[str], workspace_pa
     if not paths:
         return None
 
-    base_dir = Path(cwd) if cwd else Path.cwd()
+    base_dir = Path(cwd).resolve() if cwd else (Path(workspace_paths[0]).resolve() if workspace_paths else Path.cwd().resolve())
     ws_root = Path(workspace_paths[0]).resolve() if workspace_paths else None
 
     for raw_p in paths:

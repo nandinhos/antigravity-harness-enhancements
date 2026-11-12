@@ -635,7 +635,7 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                         )
 
             if verdict == "DENY":
-                return _make_deny(reason or "Comando ou código destrutivo rejeitado.")
+                return _make_deny(reason or "[GUARDRAIL BLOQUEOU]: Comando ou código destrutivo rejeitado.")
             elif verdict == "UNINSPECTABLE":
                 return _make_deny(f"[CEH UNINSPECTABLE - P0.1] Execução de código arbitrário bloqueada: {reason}")
 
@@ -680,6 +680,9 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
             if proc.stdout and proc.stdout.strip():
                 try:
                     cm_dict = json.loads(proc.stdout)
+                    cm_reason = cm_dict.get("reason")
+                    if isinstance(cm_reason, str) and cm_reason and not cm_reason.lstrip().startswith("["):
+                        cm_dict["reason"] = f"[CONTEXT-MODE] {cm_reason}"
                     return cm_dict, 0
                 except Exception:
                     pass

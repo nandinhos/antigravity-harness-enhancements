@@ -1,0 +1,7 @@
+{"ts": "2026-11-13T13:12:22Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 6.38, "rule": null}
+{"ts": "2026-11-13T13:12:34Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 175.1, "rule": null}
+{"ts": "2026-11-13T13:12:41Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 6.29, "rule": null}
+{"ts": "2026-11-13T13:12:45Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 74.61, "rule": null}
+{"ts": "2026-11-13T13:34:57Z", "terminal": "fernando-trabalho", "tool": "read_file", "decision": "allow", "latency_ms": 0.03, "rule": null}
+{"ts": "2026-11-13T13:35:01Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "deny", "latency_ms": 4.7, "rule": "[CEH SAFETY GATE - FAIL-CLOSED]"}
+{"ts": "2026-11-13T13:35:05Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 45.04, "rule": null}

@@ -59,3 +59,4 @@
 {"ts": "2026-11-12T23:09:39Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "deny", "latency_ms": 69.41, "rule": "[CONTEXT-MODE]"}
 {"ts": "2026-11-12T23:09:44Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 62.81, "rule": null}
 {"ts": "2026-11-12T23:09:50Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 67.62, "rule": null}
+{"ts": "2026-11-12T23:15:00Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 78.17, "rule": null}

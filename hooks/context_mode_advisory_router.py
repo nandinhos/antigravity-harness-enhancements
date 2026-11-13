@@ -14,31 +14,83 @@ import json
 import subprocess
 import re
 
-# Comandos de leitura delimitada e metadados que devem rodar diretamente no shell
+# Comandos de leitura delimitada, mutação segura e metadados que devem rodar diretamente no shell
 SAFE_NATIVE_ALLOWLIST = [
-    # Git: status, branch, tags, remotes, hash, diff --stat, log limitado
-    r"^git\s+(status|branch|tag|remote|rev-parse|diff\s+--stat|diff\s+--check)",
-    r"^git\s+(-C\s+\S+\s+)?(status|branch|tag|remote|rev-parse|diff\s+--stat|diff\s+--check)",
-    r"^git\s+(-C\s+\S+\s+)?log\s+.*(-n\s*\d+|--oneline|-[\d]+).*",
-    r"^git\s+log\s+.*(-n\s*\d+|--oneline|-[\d]+).*",
-    r"^git\s+show\s+--stat",
-    # Scripts utilitarios canonicos em ~/.gemini/config/scripts/
-    r"^python3\s+/home/nandodev/\.gemini/config/scripts/.*",
-    # Utilitários rápidos de sistema e navegação
-    r"^(pwd|which|whoami|echo\s+|head\s+|tail\s+|wc\s+|cat\s+[^\s]+)$",
+    # Git leitura delimitada: status, branch, tags, remotes, hash, diff --stat/--check, log limitado
+    r"^git\s+(?:-C\s+\S+\s+)?(status|branch|tag|remote|rev-parse|diff\s+--stat|diff\s+--check)\b",
+    r"^git\s+(?:-C\s+\S+\s+)?log\b.*(-n\s*\d+|--oneline|-\d+)\b",
+    r"^git\s+(?:-C\s+\S+\s+)?show\s+--stat\b",
+    # Git mutação e sincronização (saída curta / estado)
+    r"^git\s+(?:-C\s+\S+\s+)?(add|commit|fetch|pull|push|merge|checkout|switch|stash)\b",
+    # Scripts utilitários canônicos (portável entre usuários) e checks determinísticos
+    r"^python3\s+(?:/home/[^/\s]+|/Users/[^/\s]+|~|\$HOME)/\.gemini/config/scripts/.*",
+    r"^python3\s+-m\s+py_compile\b",
+    r"^(?:\./)?scripts/[a-zA-Z0-9_.-]+\.sh\b",
+    # Utilitários rápidos de sistema, navegação e leitura/manipulação delimitada
+    r"^(pwd|whoami)\b\s*$",
+    r"^(which|echo|head|tail|wc|stat|mkdir|cp|mv|chmod|diff)\b(?:\s+.*)?$",
+    r"^ls\b(?![^|]*\s-[a-zA-Z]*R)(?:\s+.*)?$",
+    r"^cat\s+(?:-[a-zA-Z]+\s+)*[^\s]+$",
     # Pipelines com delimitador explícito no final
-    r".*\|\s*(head|tail|wc|grep)\b.*"
+    r".*\|\s*(head|tail|wc|grep)\b.*",
 ]
 
-def is_deliberately_bounded(cmd: str) -> bool:
-    cmd_clean = cmd.strip()
+
+def _split_and_chains(cmd: str) -> list:
+    """Divide comandos encadeados por '&&' respeitando aspas simples/duplas."""
+    parts = []
+    buf = []
+    quote = None
+    i = 0
+    n = len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if ch == "\\" and quote != "'" and i + 1 < n:
+            buf.append(ch)
+            buf.append(cmd[i + 1])
+            i += 2
+            continue
+        if ch in ("'", '"'):
+            if quote is None:
+                quote = ch
+            elif quote == ch:
+                quote = None
+            buf.append(ch)
+            i += 1
+            continue
+        if quote is None and cmd[i:i + 2] == "&&":
+            seg = "".join(buf).strip()
+            if seg:
+                parts.append(seg)
+            buf = []
+            i += 2
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _is_single_bounded(segment: str) -> bool:
+    cmd_clean = segment.strip()
+    if not cmd_clean:
+        return False
     # Suporte nativo transparente ao prefixo rtk
-    if cmd_clean.startswith('rtk '):
+    if cmd_clean.startswith("rtk "):
         cmd_clean = cmd_clean[4:].strip()
     for pattern in SAFE_NATIVE_ALLOWLIST:
         if re.search(pattern, cmd_clean, re.IGNORECASE):
             return True
     return False
+
+
+def is_deliberately_bounded(cmd: str) -> bool:
+    parts = _split_and_chains(cmd.strip())
+    if not parts:
+        return False
+    return all(_is_single_bounded(part) for part in parts)
 
 def main():
     try:

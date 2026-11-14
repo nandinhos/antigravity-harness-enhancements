@@ -25,6 +25,11 @@ SAFE_NATIVE_ALLOWLIST = [
     r"^git\s+(?:-C\s+\S+\s+)?show\s+--stat\b",
     # Git mutação e sincronização (saída curta / estado)
     r"^git\s+(?:-C\s+\S+\s+)?(add|commit|fetch|pull|push|merge|checkout|switch|stash)\b",
+    # Linters com auto-fix intencional (execução direta segura sem overwrite para rtk)
+    r"^(?:ruff\s+check|golangci-lint\s+run)\b[^;|&><`\n]*\s(?:--fix\b|--unsafe-fixes\b|--fix-only\b)[^;|&><`\n]*$",
+    # Runners de teste com flags explícitas de debug/stdout (não ocultar saída sob rtk)
+    r"^(?:pytest|cargo\s+test|npm\s+test|pnpm\s+test)\b[^;|&><`\n]*\s(?:-s\b|--capture=no\b|-r[aAPfE]+\b|-vv+\b|--pdb\b|--nocapture\b)[^;|&><`\n]*$",
+    r"^go\s+test\b[^;|&><`\n]*\s-v\b[^;|&><`\n]*$",
     # Scripts utilitários canônicos (portável entre usuários) e checks determinísticos
     r"^python3\s+(?:/home/[^/\s]+|/Users/[^/\s]+|~|\$HOME)/\.gemini/config/scripts/.*",
     r"^python3\s+-m\s+py_compile\b",
@@ -166,6 +171,14 @@ def _extract_prefix_and_body(cmd: str) -> Optional[Tuple[str, str]]:
     return cd_prefix + env_prefix, base_cmd
 
 
+MUTATION_OR_OUTPUT_FLAG_RE = re.compile(
+    r"(?:^|\s)(?:--fix\b|--unsafe-fixes\b|--fix-only\b|--output(?:=|\s|$)|-o(?:\s|=|$)|--ext-diff\b)"
+)
+DEBUG_TEST_FLAG_RE = re.compile(
+    r"(?:^|\s)(?:-s\b|--capture=no\b|-r[aAPfE]+\b|-vv+\b|--pdb\b|--nocapture\b)"
+)
+
+
 def compute_deterministic_overwrite(
     cmd: str, rtk_available: Optional[bool] = None
 ) -> Optional[Tuple[str, str]]:
@@ -182,6 +195,10 @@ def compute_deterministic_overwrite(
     if extracted is None:
         return None
     prefix, base_cmd = extracted
+
+    # Blindagem Ponto 1: nunca reescrever comandos contendo flags de mutação ou escrita em arquivo
+    if MUTATION_OR_OUTPUT_FLAG_RE.search(base_cmd):
+        return None
 
     if rtk_available is None:
         rtk_available = bool(shutil.which("rtk"))
@@ -215,14 +232,25 @@ def compute_deterministic_overwrite(
             return prefix + rewritten_base, "[ELO3-OVERWRITE-BOUND]"
         return None
 
-    # OVW-RTK: runners de teste e linters suportados pelo RTK
+    # OVW-RTK: runners de teste suportados pelo RTK
+    # Blindagem Ponto 2: preservar saída nativa quando flags explícitas de debug estiverem presentes
     if rtk_available and re.match(
-        r"^(?:pytest|cargo\s+test|npm\s+test|pnpm\s+test|go\s+test|ruff\s+check|golangci-lint)(?:\s|$)",
+        r"^(?:pytest|cargo\s+test|npm\s+test|pnpm\s+test|go\s+test)(?:\s|$)",
         base_cmd,
     ):
+        is_go_verbose = bool(
+            re.match(r"^go\s+test(?:\s|$)", base_cmd) and re.search(r"(?:^|\s)-v\b", base_cmd)
+        )
+        if DEBUG_TEST_FLAG_RE.search(base_cmd) or is_go_verbose:
+            return None
         return f"{prefix}rtk {base_cmd}", "[ELO3-OVERWRITE-RTK]"
 
-    # OVW-BOUND: leitura de árvore/diretórios sem limite explícito
+    # OVW-RTK: linters suportados pelo RTK (já filtrados quanto a flags de mutação no Ponto 1)
+    if rtk_available and re.match(r"^(?:ruff\s+check|golangci-lint)(?:\s|$)", base_cmd):
+        return f"{prefix}rtk {base_cmd}", "[ELO3-OVERWRITE-RTK]"
+
+    # OVW-RTK / OVW-BOUND: leitura de árvore/diretórios sem limite explícito
+    # Blindagem Ponto 3: priorizar rtk (preserva exit code nativo) e manter '| head -n 100' como fallback
     is_ro_find = bool(
         re.match(r"^find(?:\s|$)", base_cmd)
         and not re.search(
@@ -239,6 +267,8 @@ def compute_deterministic_overwrite(
         and not re.search(r"(?:^|\s)-o\b", base_cmd)
     )
     if is_ro_find or is_recursive_ls or is_tree:
+        if rtk_available:
+            return f"{prefix}rtk {base_cmd}", "[ELO3-OVERWRITE-RTK]"
         return f"{prefix}{base_cmd} | head -n 100", "[ELO3-OVERWRITE-BOUND]"
 
     return None

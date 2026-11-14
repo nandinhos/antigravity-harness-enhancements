@@ -6,24 +6,111 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🚀 Iniciando provisionamento do Harness Antigravity..."
+
+# 0. Ajuste de PATH para subshells não-interativos
+export PATH="$HOME/.gemini/antigravity/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+if [ -d "$HOME/.nvm" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
+    # Carrega o NVM se disponível para garantir o node/npm corretos
+    # shellcheck source=/dev/null
+    \. "$HOME/.nvm/nvm.sh" || true
+fi
 
 # 1. Dependências Python via uv
 if ! command -v uv &> /dev/null; then
     echo "📦 Instalando Astral uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
+else
+    echo "✓ Astral uv já instalado: $(uv --version)"
 fi
 
-# 2. Instalar Graphify
-echo "📦 Instalando / atualizando Graphify..."
+# 2. Instalar / atualizar Graphify
+echo "📦 Instalando / atualizando Graphify via uv..."
 uv tool install graphifyy --force 2>/dev/null || uv tool upgrade graphifyy 2>/dev/null || true
+graphify install --platform antigravity 2>/dev/null || true
 
-# 3. context-mode
+# 3. context-mode (Higiene de Contexto)
 if command -v npm &> /dev/null; then
-    echo "📦 Instalando context-mode..."
-    npm install -g context-mode 2>/dev/null || true
+    echo "📦 Instalando / atualizando context-mode global via npm..."
+    npm install -g context-mode 2>/dev/null || {
+        echo "⚠️ Falha ao instalar context-mode globalmente com npm. Tentando com permissões do usuário..."
+        mkdir -p "$HOME/.npm-global"
+        npm config set prefix "$HOME/.npm-global"
+        export PATH="$HOME/.npm-global/bin:$PATH"
+        npm install -g context-mode || true
+    }
+else
+    echo "⚠️ npm não encontrado no PATH. Instale o Node.js 20+ para utilizar o context-mode."
 fi
+
+# 3.1 Wrappers determinísticos em ~/.gemini/antigravity/bin/ (Resolução do PATH no Antigravity)
+echo "⚙️  Configurando wrappers determinísticos em ~/.gemini/antigravity/bin/..."
+mkdir -p "$HOME/.gemini/antigravity/bin"
+
+NODE_PATH_FOUND="$(which node 2>/dev/null || echo "$HOME/.nvm/versions/node/v22.22.1/bin/node")"
+CONTEXT_MODE_BUNDLE="$(find "$HOME/.nvm" "$HOME/.npm-global" -name "cli.bundle.mjs" 2>/dev/null | grep "context-mode" | head -n 1 || echo "")"
+
+if [ -n "$CONTEXT_MODE_BUNDLE" ] && [ -x "$NODE_PATH_FOUND" ]; then
+    cat << EOF > "$HOME/.gemini/antigravity/bin/context-mode"
+#!/usr/bin/env bash
+export CONTEXT_MODE_DIR="\${CONTEXT_MODE_DIR:-\$HOME/.gemini/context-mode}"
+mkdir -p "\$CONTEXT_MODE_DIR"
+export PATH="\$(dirname "$NODE_PATH_FOUND"):$HOME/.local/bin:\$PATH"
+exec "$NODE_PATH_FOUND" --no-warnings "$CONTEXT_MODE_BUNDLE" "\$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/context-mode"
+    echo "  ✓ context-mode wrapper configurado com CONTEXT_MODE_DIR centralizado"
+fi
+
+if [ -f "$HOME/.local/bin/graphify" ]; then
+    cat << 'EOF' > "$HOME/.gemini/antigravity/bin/graphify"
+#!/usr/bin/env bash
+export PATH="$HOME/.local/bin:$PATH"
+exec "$HOME/.local/bin/graphify" "$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/graphify"
+    echo "  ✓ graphify wrapper configurado"
+fi
+
+if [ -f "$HOME/.local/bin/graphify-mcp" ]; then
+    cat << 'EOF' > "$HOME/.gemini/antigravity/bin/graphify-mcp"
+#!/usr/bin/env bash
+export PATH="$HOME/.local/bin:$PATH"
+exec "$HOME/.local/bin/graphify-mcp" "$@"
+EOF
+    chmod +x "$HOME/.gemini/antigravity/bin/graphify-mcp"
+    echo "  ✓ graphify-mcp wrapper configurado"
+fi
+
+# 3.2 Registro Canônico de MCP Servers em ~/.gemini/config/mcp_config.json
+echo "⚙️  Sincronizando servidores MCP em ~/.gemini/config/mcp_config.json..."
+mkdir -p "$HOME/.gemini/config"
+python3 - << 'PYEOF'
+import json, os
+mcp_file = os.path.expanduser("~/.gemini/config/mcp_config.json")
+data = {"mcpServers": {}}
+if os.path.exists(mcp_file):
+    try:
+        with open(mcp_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        pass
+
+servers = data.setdefault("mcpServers", {})
+servers["context-mode"] = {
+    "command": os.path.expanduser("~/.gemini/antigravity/bin/context-mode")
+}
+servers["graphify"] = {
+    "command": os.path.expanduser("~/.gemini/antigravity/bin/graphify-mcp")
+}
+
+with open(mcp_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+print("  ✓ mcp_config.json atualizado com context-mode e graphify")
+PYEOF
 
 # 4. Clonar / Atualizar Skills Públicas
 echo "📦 Sincronizando Suíte Canônica de Skills..."
@@ -58,7 +145,14 @@ done
 # 6. Garantir template do Orquestrador Gemini
 echo "⚙️  Registrando gemini-orchestrator..."
 mkdir -p "$HOME/.gemini/config/agents/gemini-orchestrator"
-cat << 'EOF' > "$HOME/.gemini/config/agents/gemini-orchestrator/agent.md"
+TEMPLATE_AGENT="$SCRIPT_DIR/templates/gemini-orchestrator.agent.md"
+DEST_AGENT="$HOME/.gemini/config/agents/gemini-orchestrator/agent.md"
+
+if [ -f "$TEMPLATE_AGENT" ]; then
+    cp "$TEMPLATE_AGENT" "$DEST_AGENT"
+    echo "  ✓ Copiado de templates/gemini-orchestrator.agent.md"
+else
+    cat << 'EOF' > "$DEST_AGENT"
 ---
 name: gemini-orchestrator
 description: >-
@@ -84,6 +178,8 @@ description: >-
 2. **Parcimônia (Anti-Over-Orchestration):** Escopos contidos (1 a 3 arquivos) com causa raiz mapeada são resolvidos diretamente em turno único com o menor diff funcional.
 3. **Contrato Canônico de Esforço:** Toda tarefa atômica deve especificar `[effort: low | medium | high]` (default: `medium`).
 EOF
+    echo "  ✓ Registrado a partir do fallback inline"
+fi
 
 # 7. Instalar Hooks e Scripts Canônicos da Tríade Determinística
 echo "⚡ Instalando Hooks e Scripts de Eficiência de Tokens (Tríade Determinística)..."
@@ -226,4 +322,4 @@ echo " - Skills ativas em ~/.gemini/config/skills: $(ls "$HOME/.gemini/config/sk
 echo " - Hooks ativos em ~/.gemini/config/hooks: $(ls "$HOME/.gemini/config/hooks" 2>/dev/null | wc -l)"
 echo " - Utilitários em ~/.gemini/config/scripts: $(ls "$HOME/.gemini/config/scripts" 2>/dev/null | wc -l)"
 echo ""
-echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.2-p0.1 + Graphify + Git Inspect + RTK."
+echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.3-p0.1 + Graphify + Git Inspect + RTK."

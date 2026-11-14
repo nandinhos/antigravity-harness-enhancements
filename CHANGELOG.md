@@ -5,6 +5,21 @@ Todas as modificações estruturais, inclusão de hooks, otimizações e telemet
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.5.0] - 2026-11-14
+
+### Adicionado
+- **Elo 3 — Reescrita Determinística `overwrite` (`HOOK-OPT-03`)**:
+  - Introdução de `compute_deterministic_overwrite` em `hooks/context_mode_advisory_router.py` e integração ao `hooks_dispatcher.py` (`v0.9.3-p0.1`), retornando `decision="allow"` com objeto top-level `overwrite` (RTK ou delimitador seguro) sem spawn de subprocesso ou turno adicional.
+  - Redução de `-51,5%` na latência média em benchmark `10/10 PASS` (`239,38 ms` $\to$ `116,14 ms`), preservando `11/11 PASS` na suíte unitária e `55/55 PASS` na validação adversarial `P0.1`.
+
+### Corrigido
+- **Blindagem Adversarial de 3 Bordas no `overwrite` do Elo 3**:
+  - Proteção contra falsos positivos em pipes compostos, comandos destrutivos/mutantes e preservação estrita de delimitação na reescrita determinística de `context_mode_advisory_router.py`.
+
+### Alterado
+- **Unificação de `bootstrap-workstation.sh` (`main` + `dev-security-opt-01-p01`)**:
+  - Incorporação do ajuste de `PATH`/NVM para subshells não-interativos, wrappers determinísticos em `~/.gemini/antigravity/bin/`, sincronização de `mcp_config.json`, `graphify install --platform antigravity` e atualização da assinatura para `Unified Guardrails Dispatcher v0.9.3-p0.1`.
+
 ## [3.4.0] - 2026-11-14
 
 ### Adicionado

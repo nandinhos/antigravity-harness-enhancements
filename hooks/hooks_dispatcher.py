@@ -11,6 +11,7 @@ Implementa:
   5. Política Fail-Closed Estrita em Exit Code 0 com Tratamento de Código UNINSPECTABLE.
   6. Confinamento de Filesystem e Proteção de Workspace (.ceh/, .git/, caminhos absolutos).
   7. Catálogo de 42 Ferramentas Mapeadas e Heurística Conservadora para Ferramentas Desconhecidas.
+  8. Elo 1.5 integrado: Container & Sail Guard (ask quando php artisan roda fora de Docker/Sail).
 """
 
 import sys
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Set
 
 # Constantes de Versão e Governança
-DISPATCHER_VERSION = "0.9.1-p0.1"
+DISPATCHER_VERSION = "0.9.2-p0.1"
 MAX_WRAPPER_DEPTH = 3
 
 # Localização e carregamento dos módulos do harness
@@ -544,7 +545,14 @@ def validate_path_confinement(paths: List[str], cwd: Optional[str], workspace_pa
         return None
 
     base_dir = Path(cwd).resolve() if cwd else (Path(workspace_paths[0]).resolve() if workspace_paths else Path.cwd().resolve())
-    ws_root = Path(workspace_paths[0]).resolve() if workspace_paths else None
+    allowed_roots: List[Path] = []
+    if workspace_paths:
+        allowed_roots = [Path(p).resolve() for p in workspace_paths if p]
+        allowed_roots.extend([
+            Path("/tmp").resolve(),
+            (Path.home() / ".gemini" / "antigravity" / "brain").resolve(),
+            (Path.home() / "projects").resolve(),
+        ])
 
     for raw_p in paths:
         clean = raw_p.strip()
@@ -573,13 +581,66 @@ def validate_path_confinement(paths: List[str], cwd: Optional[str], workspace_pa
             if any(resolved_str.startswith(d) for d in ("/etc", "/root", "/boot", "/sys", "/proc", "/bin", "/sbin", "/usr")):
                 return f"[CEH WORKSPACE CONFINEMENT] ⛔ Tentativa de modificação em diretório restrito do sistema ({resolved_str})."
 
-            # Confinamento ao workspace: se escapar do workspace e não estiver em /tmp
-            if ws_root is not None:
-                ws_str = str(ws_root)
-                if not resolved_str.startswith(ws_str) and not resolved_str.startswith("/tmp"):
+            # Confinamento ao workspace, artefatos (/brain), repositórios do laboratório (~/projects) e /tmp
+            if workspace_paths:
+                is_allowed = resolved_str.startswith("/tmp") or any(
+                    resolved == r or r in resolved.parents for r in allowed_roots
+                )
+                if not is_allowed:
                     return f"[CEH WORKSPACE CONFINEMENT] ⛔ Tentativa de escrita fora dos limites do workspace ({raw_p} -> {resolved_str})."
         except Exception as pe:
             return f"[CEH PATH SAFETY] Erro na resolução canônica do caminho '{raw_p}': {pe}"
+
+    return None
+
+
+def _find_project_root(cwd: str) -> str:
+    current = os.path.abspath(cwd or os.getcwd())
+    while current and current != "/":
+        if os.path.isdir(os.path.join(current, ".git")):
+            return current
+        current = os.path.dirname(current)
+    return os.path.abspath(cwd or os.getcwd())
+
+
+def check_container_guard(cmd: str, cwd: Optional[str], workspace_paths: List[str]) -> Optional[Dict[str, Any]]:
+    """
+    Elo 1.5 (Container & Sail Guard): garante que comandos PHP/Artisan em projetos Docker/Sail
+    peçam confirmação caso sejam direcionados ao host em vez do container.
+    """
+    clean_cmd = cmd.strip()
+    if not clean_cmd:
+        return None
+
+    base_dir = cwd or (workspace_paths[0] if workspace_paths else os.getcwd())
+    project_root = _find_project_root(base_dir)
+
+    has_sail = os.path.isfile(os.path.join(project_root, "vendor/bin/sail"))
+    has_docker_env = os.path.isfile(os.path.join(project_root, ".env.docker"))
+    has_compose = any(
+        os.path.isfile(os.path.join(project_root, fname))
+        for fname in ("docker-compose.yml", "compose.yaml", "compose.yml")
+    )
+
+    if not (has_sail or has_docker_env or has_compose):
+        return None
+
+    if re.search(r"\b(docker compose|docker-compose|docker exec|sail|scripts/|vendor/bin/sail)\b", clean_cmd):
+        return None
+
+    for seg in re.split(r"&&|\|\||;|\|", clean_cmd):
+        clean_seg = re.sub(r"^[A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+", "", seg.strip()).strip()
+        if not clean_seg or re.search(r"\b(docker|sail)\b", clean_seg):
+            continue
+        if re.match(r"^(php\s+artisan|artisan|\./artisan)\b", clean_seg):
+            return {
+                "decision": "ask",
+                "reason": (
+                    f"[CONTAINER GUARD] O comando '{clean_seg}' foi direcionado ao host, "
+                    "mas este projeto possui ambiente Docker/Sail. Recomenda-se executar "
+                    "dentro do container (ex: via docker compose exec app ... ou ./vendor/bin/sail)."
+                ),
+            }
 
     return None
 
@@ -662,6 +723,13 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                 return resp_dict, 0
         except Exception as e:
             return _make_deny(f"[CEH SAFETY GATE ERROR] Exceção na validação de governança ({e}). Execução bloqueada (fail-closed).")
+
+    # Elo 1.5: Container & Sail Guard (apenas para run_command)
+    if normalized.canonical_name == "run_command":
+        for cmd in normalized.commands:
+            cg_resp = check_container_guard(cmd, normalized.cwd, normalized.workspace_paths)
+            if cg_resp is not None:
+                return cg_resp, 0
 
     # Elo 3: Smart Advisory Router (apenas para run_command)
     if _ADVISORY_ROUTER_AVAILABLE and normalized.canonical_name == "run_command":

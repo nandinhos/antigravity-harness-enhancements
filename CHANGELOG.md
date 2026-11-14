@@ -5,6 +5,20 @@ Todas as modificações estruturais, inclusão de hooks, otimizações e telemet
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.3.0] - 2026-11-14
+
+### Adicionado
+- **Elo 1.5 integrado (`check_container_guard` e `_find_project_root`) em `hooks/hooks_dispatcher.py` (`v0.9.2-p0.1`)**: absorção da detecção Docker/Sail do legado `sail-container-guard` para dentro do pipeline monoprocesso (`decision: ask` com tag `[CONTAINER GUARD]` para `php artisan` no host, mantendo precedência estrita de `deny` do Elo 1 e zerando o spawn de processo Python adicional).
+- **Telemetria Multi-Terminal Anonimizada em produção (`telemetry/runs/` e `scripts/sync_telemetry.sh`)**: homologação em campo durante 5 dias ativos (`N=863` eventos únicos deduplicados entre `fernando-casa` e `fernando-trabalho`, `0` falhas *fail-open* e redução da mediana em `fernando-trabalho` para `0,43 ms` após o fast-path `6a773c3`).
+
+### Alterado
+- **Refinamento do Confinamento de Caminhos (`validate_path_confinement`)**: suporte seguro a gravações multi-repositório sob `~/projects/` e artefatos/scratch oficiais sob `~/.gemini/antigravity/brain/`, preservando proteção estrita contra escrita em `~/.gemini/config/`, `.git/`, `.ceh/` e diretórios críticos do sistema (`/etc`, `/root`, `/usr`, etc.).
+- **Alinhamento do Bootstrap (`bootstrap-workstation.sh`)**:
+  - Instalação automática de `hooks/hooks_dispatcher.py` e `scripts/sync_telemetry.sh` além dos módulos de suporte (`context_mode_advisory_router.py`, `scoped_execution_guard.py`, `git_inspect.py`).
+  - Geração do `~/.gemini/config/hooks.json` utilizando `"unified-guardrails-dispatcher"` com o `matcher` completo de 15 ferramentas (`run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|read_file|view_file|grep_search|read_url_content|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content`).
+  - Desativação explícita (`"enabled": false`) das entradas globais legadas/redundantes `"sail-container-guard"`, `"destructive-command-guardrail"` e `"ceh-stop-guard"` (mantendo `ceh-stop-guard` e `ceh-safety-gate` ativos via manifesto do plugin `clearer-engineering`).
+- **Documentação Base (`README.md`)**: atualizada para `v3.3` refletindo o Unified Guardrails Dispatcher, telemetria multi-terminal e novo fluxo do `bootstrap-workstation.sh`.
+
 ## [3.2.0] - 2026-11-08
 
 ### Adicionado

@@ -91,6 +91,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$HOME/.gemini/config/hooks"
 mkdir -p "$HOME/.gemini/config/scripts"
 
+if [ -f "$SCRIPT_DIR/hooks/hooks_dispatcher.py" ]; then
+    cp "$SCRIPT_DIR/hooks/hooks_dispatcher.py" "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
+    chmod +x "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
+    echo "  ✓ hooks_dispatcher.py instalado"
+fi
+
 if [ -f "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" ]; then
     cp "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" "$HOME/.gemini/config/hooks/context_mode_advisory_router.py"
     chmod +x "$HOME/.gemini/config/hooks/context_mode_advisory_router.py"
@@ -109,12 +115,19 @@ if [ -f "$SCRIPT_DIR/scripts/git_inspect.py" ]; then
     echo "  ✓ git_inspect.py instalado"
 fi
 
-# 7.1 Sincronizar hooks.json preservando ordem canônica de prioridade
-echo "⚙️  Configurando ordem canônica em ~/.gemini/config/hooks.json..."
+if [ -f "$SCRIPT_DIR/scripts/sync_telemetry.sh" ]; then
+    cp "$SCRIPT_DIR/scripts/sync_telemetry.sh" "$HOME/.gemini/config/scripts/sync_telemetry.sh"
+    chmod +x "$HOME/.gemini/config/scripts/sync_telemetry.sh"
+    echo "  ✓ sync_telemetry.sh instalado"
+fi
+
+# 7.1 Sincronizar hooks.json com Unified Guardrails Dispatcher consolidado
+echo "⚙️  Configurando ~/.gemini/config/hooks.json..."
 python3 - << 'PYEOF'
 import json, os
 
 hooks_file = os.path.expanduser("~/.gemini/config/hooks.json")
+dispatcher_path = os.path.expanduser("~/.gemini/config/hooks/hooks_dispatcher.py")
 data = {}
 if os.path.exists(hooks_file):
     try:
@@ -123,21 +136,18 @@ if os.path.exists(hooks_file):
     except Exception:
         pass
 
-# Preserva ceh-safety-gate como Prioridade 1
 new_hooks = {}
-if "ceh-safety-gate" in data:
-    new_hooks["ceh-safety-gate"] = data["ceh-safety-gate"]
 
-# Prioridade 2: Scoped Execution Guard (Confinamento e Timeout de 30s)
-new_hooks["scoped-execution-guard"] = {
+# PreToolUse unificado (Elo 0 -> Elo 1 CEH -> Elo 1.5 Container Guard -> Elo 3 Advisory + Telemetria)
+new_hooks["unified-guardrails-dispatcher"] = {
     "enabled": True,
     "PreToolUse": [
         {
-            "matcher": "run_command|ctx_execute",
+            "matcher": "run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|read_file|view_file|grep_search|read_url_content|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
             "hooks": [
                 {
                     "type": "command",
-                    "command": "python3 \"$HOME/.gemini/config/hooks/scoped_execution_guard.py\"",
+                    "command": f"python3 {dispatcher_path}",
                     "timeout": 30
                 }
             ]
@@ -145,21 +155,9 @@ new_hooks["scoped-execution-guard"] = {
     ]
 }
 
-# Prioridade 3: Smart Advisory Router (Fim de falsos bloqueios com deny)
+# PostToolUse (indexação e compressão Context-Mode)
 new_hooks["context-mode-guard"] = {
     "enabled": True,
-    "PreToolUse": [
-        {
-            "matcher": "run_command|view_file|grep_search|read_url_content",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "python3 \"$HOME/.gemini/config/hooks/context_mode_advisory_router.py\"",
-                    "timeout": 10
-                }
-            ]
-        }
-    ],
     "PostToolUse": [
         {
             "matcher": "run_command|view_file|grep_search|read_url_content",
@@ -174,7 +172,19 @@ new_hooks["context-mode-guard"] = {
     ]
 }
 
-# Preserva quaisquer outros hooks existentes (ex: ceh-stop-guard)
+# Desativa entradas legadas/redundantes no hooks.json global preservando integridade do plugin CEH
+for legacy_key in (
+    "destructive-command-guardrail",
+    "sail-container-guard",
+    "scoped-execution-guard",
+    "ceh-stop-guard",
+):
+    if legacy_key in data and isinstance(data[legacy_key], dict):
+        legacy_entry = dict(data[legacy_key])
+        legacy_entry["enabled"] = False
+        new_hooks[legacy_key] = legacy_entry
+
+# Preserva demais hooks ativos existentes (ex: ralph-stop-guard, antigravity-windows-sync)
 for k, v in data.items():
     if k not in new_hooks:
         new_hooks[k] = v
@@ -200,4 +210,4 @@ echo " - Skills ativas em ~/.gemini/config/skills: $(ls "$HOME/.gemini/config/sk
 echo " - Hooks ativos em ~/.gemini/config/hooks: $(ls "$HOME/.gemini/config/hooks" 2>/dev/null | wc -l)"
 echo " - Utilitários em ~/.gemini/config/scripts: $(ls "$HOME/.gemini/config/scripts" 2>/dev/null | wc -l)"
 echo ""
-echo "O ambiente está configurado com a Tríade Determinística (Smart Router + Scoped Guard + Git Inspect)."
+echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.2-p0.1 + Graphify + Git Inspect + RTK."

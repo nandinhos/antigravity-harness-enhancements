@@ -5,6 +5,18 @@ Todas as modificações estruturais, inclusão de hooks, otimizações e telemet
 O formato é baseado no [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [3.4.0] - 2026-11-14
+
+### Adicionado
+- **Versionamento e Sincronização de Regras Globais `always_on` (`rules/` — `RULE-OPT-01`)**:
+  - Inclusão de `rules/guardrails-safety.md` (enxugado de `3.465 B` para `1.876 B`, `-45,86%`, e atualizado de `guard_destructive.py` para `~/.gemini/config/hooks/hooks_dispatcher.py`) e `rules/macos-symlink-resolution.md` (`1.310 B`).
+  - Integração automática no `bootstrap-workstation.sh` para copiar `rules/*.md` em `~/.gemini/config/rules/` preservando backups em `~/.gemini/config/.backups/rules/`.
+
+### Alterado
+- **Redução Sistêmica de Carga Fixa em `always_on` (`RUN-2026-11-14-RULE-OPT-01-ALWAYS-ON`)**:
+  - Em conjunto com a compactação lossless do CEH (`AGENTS.md`: `24.905 B` $\to$ `12.092 B`, `coding-policy.md`: `1.642 B`, `core-engineering.md`: `990 B`), o conjunto global + plugin caiu de **`40.079 bytes` para `22.798 bytes` (`-43,12%`)** por turno, eliminando integralmente o truncamento de `978 bytes` em `AGENTS.md` e preservando `32/32` cláusulas normativas obrigatórias e `138/138` no `ceh-doctor.sh --verify`.
+- Documentação base (`README.md`) atualizada para `v3.4` refletindo a gestão de `rules/` e os ganhos medidos de `RULE-OPT-01`.
+
 ## [3.3.0] - 2026-11-14
 
 ### Adicionado

@@ -1,5 +1,5 @@
-# 🚀 Antigravity Harness Enhancements (v3.3)
-### *Eficiência de Tokens Zero-LLM & Unified Guardrails Dispatcher*
+# 🚀 Antigravity Harness Enhancements (v3.4)
+### *Eficiência de Tokens Zero-LLM, Regras `always_on` Enxutas & Unified Guardrails Dispatcher*
 
 Repositório dedicado ao enriquecimento de contexto, eliminação de vazamento de logs, confinamento seguro de subprocessos e economia comprovada de tokens e latência no **Antigravity CLI (agy)** e **Antigravity IDE**.
 
@@ -17,6 +17,7 @@ Repositório dedicado ao enriquecimento de contexto, eliminação de vazamento d
 3. **Scoped Execution Guard (`scoped_execution_guard.py`):** módulo integrado ao dispatcher que intercepta varreduras abertas recursivas na raiz/home (`find /`, `find ~`) em $< 5\text{ ms}$, impõe timeout estrito de 30s por subprocesso e garante encerramento em árvore via `os.killpg` (zero processos zumbis).
 4. **Ferramental Declarativo Git (`git_inspect.py`):** utilitário parametrizado em JSON que responde em **40,2 ms**, cortando a geração procedural ad-hoc de scripts Python em sessões com Context-Mode.
 5. **Compressão Determinística de Terminal (RTK):** suporte transparente no dispatcher e router para prefixo `rtk`, condensando logs de terminal com redução de **56,1% em bytes** e **75,6% em linhas**.
+6. **Regras Globais Versionadas e Enxutas (`rules/` — `RULE-OPT-01`):** versionamento explícito de `guardrails-safety.md` (`3.465 B` $\to$ `1.876 B`, apontando para `hooks_dispatcher.py`) e `macos-symlink-resolution.md` (`1.310 B`), combinado à compactação lossless do CEH (`AGENTS.md`: `24.905 B` $\to$ `12.092 B`, zero truncamento frente ao teto de `24.000 B`).
 
 ---
 
@@ -43,6 +44,7 @@ Medições comparativas pós-consolidação (`RUN-2026-11-14-HOOK-OPT-02-CONSOLI
 | **Evento `Stop` Deduplicado (`CB-09`)** | 93,32 ms ($2\times$ `ceh-stop-guard`) | **47,04 ms ($1\times$ no plugin)** | **-49,6% na média (-51,0% p50)** |
 | **Container & Sail Guard — Elo 1.5 (`CB-03`)** | 167,10 ms (`deny` precoce) | **74,86 ms (`ask` orientativo)** | **-55,2% + precedência correta** |
 | **Confinamento Multi-Repo e Artefatos (`CB-06`, `CB-07`)** | `deny` (falso positivo) | **`allow` (~74 ms)** | **Zero falsos bloqueios (`CB-08` segue `deny`)** |
+| **Carga Fixa de Regras `always_on` (`RULE-OPT-01`)** | 40.079 B (`AGENTS.md` truncado em 978 B) | **22.798 B (`AGENTS.md` 12.092 B)** | **`-43,12%` em bytes/turno + zero truncamento (32/32 cláusulas)** |
 
 ---
 
@@ -59,7 +61,7 @@ O script automaticamente:
 2. Sincroniza a suíte canônica de skills em `~/.gemini/config/skills/`.
 3. Registra o agente `gemini-orchestrator`.
 4. Instala `hooks_dispatcher.py` (Unified Guardrails Dispatcher `v0.9.2-p0.1`) junto aos módulos `context_mode_advisory_router.py` e `scoped_execution_guard.py` em `~/.gemini/config/hooks/`.
-5. Instala os utilitários `git_inspect.py` e `sync_telemetry.sh` em `~/.gemini/config/scripts/`.
+5. Instala os utilitários `git_inspect.py` e `sync_telemetry.sh` em `~/.gemini/config/scripts/`, e sincroniza as regras globais enxutas (`rules/*.md`) em `~/.gemini/config/rules/` (com backup em `~/.gemini/config/.backups/rules/`).
 6. Configura `~/.gemini/config/hooks.json`:
    - `PreToolUse`: `unified-guardrails-dispatcher` cobrindo 15 ferramentas (`run_command`, `ctx_execute`, `ctx_batch_execute`, `ctx_execute_file`, `ctx_purge`, `call_mcp_tool`, `read_file`, `view_file`, `grep_search`, `read_url_content`, `write_file`, `edit_file`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`).
    - `PostToolUse`: `context-mode-guard` (`context-mode hook antigravity-cli posttooluse`).

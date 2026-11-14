@@ -121,6 +121,22 @@ if [ -f "$SCRIPT_DIR/scripts/sync_telemetry.sh" ]; then
     echo "  ✓ sync_telemetry.sh instalado"
 fi
 
+# 7.0 Sincronizar Regras Globais always_on enxutas (backup prévio em caso de divergência)
+mkdir -p "$HOME/.gemini/config/rules"
+if [ -d "$SCRIPT_DIR/rules" ]; then
+    for rule_file in "$SCRIPT_DIR/rules/"*.md; do
+        [ -f "$rule_file" ] || continue
+        rule_name="$(basename "$rule_file")"
+        target_rule="$HOME/.gemini/config/rules/$rule_name"
+        if [ -f "$target_rule" ] && ! cmp -s "$rule_file" "$target_rule"; then
+            mkdir -p "$HOME/.gemini/config/.backups/rules"
+            cp "$target_rule" "$HOME/.gemini/config/.backups/rules/${rule_name}.bak-$(date +%Y%m%d%H%M%S)"
+        fi
+        cp "$rule_file" "$target_rule"
+        echo "  ✓ rule global sincronizada: $rule_name"
+    done
+fi
+
 # 7.1 Sincronizar hooks.json com Unified Guardrails Dispatcher consolidado
 echo "⚙️  Configurando ~/.gemini/config/hooks.json..."
 python3 - << 'PYEOF'

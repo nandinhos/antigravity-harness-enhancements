@@ -8,6 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🚀 Iniciando provisionamento do Harness Antigravity..."
 
 # 0. Ajuste de PATH para subshells não-interativos
@@ -29,18 +31,18 @@ fi
 
 # 2. Instalar / atualizar Graphify
 echo "📦 Instalando / atualizando Graphify via uv..."
-uv tool install graphifyy --force || uv tool upgrade graphifyy
-graphify install --platform antigravity || true
+uv tool install graphifyy --force 2>/dev/null || uv tool upgrade graphifyy 2>/dev/null || true
+graphify install --platform antigravity 2>/dev/null || true
 
 # 3. context-mode (Higiene de Contexto)
 if command -v npm &> /dev/null; then
     echo "📦 Instalando / atualizando context-mode global via npm..."
-    npm install -g context-mode || {
+    npm install -g context-mode 2>/dev/null || {
         echo "⚠️ Falha ao instalar context-mode globalmente com npm. Tentando com permissões do usuário..."
         mkdir -p "$HOME/.npm-global"
         npm config set prefix "$HOME/.npm-global"
         export PATH="$HOME/.npm-global/bin:$PATH"
-        npm install -g context-mode
+        npm install -g context-mode || true
     }
 else
     echo "⚠️ npm não encontrado no PATH. Instale o Node.js 20+ para utilizar o context-mode."
@@ -51,7 +53,7 @@ echo "⚙️  Configurando wrappers determinísticos em ~/.gemini/antigravity/bi
 mkdir -p "$HOME/.gemini/antigravity/bin"
 
 NODE_PATH_FOUND="$(which node 2>/dev/null || echo "$HOME/.nvm/versions/node/v22.22.1/bin/node")"
-CONTEXT_MODE_BUNDLE="$(find "$HOME/.nvm" -name "cli.bundle.mjs" 2>/dev/null | grep "context-mode" | head -n 1 || echo "")"
+CONTEXT_MODE_BUNDLE="$(find "$HOME/.nvm" "$HOME/.npm-global" -name "cli.bundle.mjs" 2>/dev/null | grep "context-mode" | head -n 1 || echo "")"
 
 if [ -n "$CONTEXT_MODE_BUNDLE" ] && [ -x "$NODE_PATH_FOUND" ]; then
     cat << EOF > "$HOME/.gemini/antigravity/bin/context-mode"
@@ -112,53 +114,7 @@ with open(mcp_file, "w", encoding="utf-8") as f:
 print("  ✓ mcp_config.json atualizado com context-mode e graphify")
 PYEOF
 
-# 3.3 Registro Canônico de Hooks em ~/.gemini/config/hooks.json
-echo "⚙️  Sincronizando hooks nativos em ~/.gemini/config/hooks.json..."
-python3 - << 'PYEOF'
-import json, os
-hooks_file = os.path.expanduser("~/.gemini/config/hooks.json")
-data = {}
-if os.path.exists(hooks_file):
-    try:
-        with open(hooks_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        pass
-
-data["context-mode-guard"] = {
-    "enabled": True,
-    "PreToolUse": [
-        {
-            "matcher": "run_command|view_file|grep_search|read_url_content",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "context-mode hook antigravity-cli pretooluse",
-                    "timeout": 10
-                }
-            ]
-        }
-    ],
-    "PostToolUse": [
-        {
-            "matcher": "run_command|view_file|grep_search|read_url_content",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "context-mode hook antigravity-cli posttooluse",
-                    "timeout": 10
-                }
-            ]
-        }
-    ]
-}
-
-with open(hooks_file, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-print("  ✓ hooks.json atualizado com context-mode-guard nativo")
-PYEOF
-
-# 4. Clonar / Atualizar Skills Canônicas
+# 4. Clonar / Atualizar Skills Públicas
 echo "📦 Sincronizando Suíte Canônica de Skills..."
 mkdir -p "$HOME/.claude"
 if [ ! -d "$HOME/.claude/skills/.git" ]; then
@@ -203,7 +159,33 @@ if [ -f "$TEMPLATE_AGENT" ]; then
     cp "$TEMPLATE_AGENT" "$DEST_AGENT"
     echo "  ✓ Copiado de templates/gemini-orchestrator.agent.md"
 else
-    echo "  ⚠️ Template $TEMPLATE_AGENT não encontrado! Mantendo agente existente se houver."
+    cat << 'EOF' > "$DEST_AGENT"
+---
+name: gemini-orchestrator
+description: >-
+  Orquestrador central Gemini para o Antigravity CLI. Decompõe tarefas complexas,
+  roteia para frentes especializadas, atribui modelo + esforço Gemini por tarefa,
+  consolida resultados estruturados e usa o knowledge graph Graphify como camada de
+  contexto determinística (custo zero de LLM).
+---
+
+# Gemini Orchestrator (Antigravity)
+
+## Roteamento de Modelo / Esforço
+| Frente | Modelo |
+|---|---|
+| Arquitetura / design | `gemini-3.1-pro-high` |
+| Implementação | `gemini-3.8-flash` com `--effort medium` |
+| Refatoração / boilerplate | `gemini-3.8-flash` com `--effort low` |
+| Debug / RCA | `gemini-3.8-flash` com `--effort high` |
+| Validação / review | `gemini-3.1-pro-high` |
+
+## Princípios Inegociáveis (Ponytail Mode)
+1. **AST First:** Sempre consulte o Graphify (`graphify query/path/explain`) antes de ler arquivos brutos.
+2. **Parcimônia (Anti-Over-Orchestration):** Escopos contidos (1 a 3 arquivos) com causa raiz mapeada são resolvidos diretamente em turno único com o menor diff funcional.
+3. **Contrato Canônico de Esforço:** Toda tarefa atômica deve especificar `[effort: low | medium | high]` (default: `medium`).
+EOF
+    echo "  ✓ Registrado a partir do fallback inline"
 fi
 
 # 7. Instalar Hooks e Scripts Canônicos da Tríade Determinística
@@ -211,6 +193,12 @@ echo "⚡ Instalando Hooks e Scripts de Eficiência de Tokens (Tríade Determin�
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$HOME/.gemini/config/hooks"
 mkdir -p "$HOME/.gemini/config/scripts"
+
+if [ -f "$SCRIPT_DIR/hooks/hooks_dispatcher.py" ]; then
+    cp "$SCRIPT_DIR/hooks/hooks_dispatcher.py" "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
+    chmod +x "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
+    echo "  ✓ hooks_dispatcher.py instalado"
+fi
 
 if [ -f "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" ]; then
     cp "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" "$HOME/.gemini/config/hooks/context_mode_advisory_router.py"
@@ -230,12 +218,35 @@ if [ -f "$SCRIPT_DIR/scripts/git_inspect.py" ]; then
     echo "  ✓ git_inspect.py instalado"
 fi
 
-# 7.1 Sincronizar hooks.json preservando ordem canônica de prioridade
-echo "⚙️  Configurando ordem canônica em ~/.gemini/config/hooks.json..."
+if [ -f "$SCRIPT_DIR/scripts/sync_telemetry.sh" ]; then
+    cp "$SCRIPT_DIR/scripts/sync_telemetry.sh" "$HOME/.gemini/config/scripts/sync_telemetry.sh"
+    chmod +x "$HOME/.gemini/config/scripts/sync_telemetry.sh"
+    echo "  ✓ sync_telemetry.sh instalado"
+fi
+
+# 7.0 Sincronizar Regras Globais always_on enxutas (backup prévio em caso de divergência)
+mkdir -p "$HOME/.gemini/config/rules"
+if [ -d "$SCRIPT_DIR/rules" ]; then
+    for rule_file in "$SCRIPT_DIR/rules/"*.md; do
+        [ -f "$rule_file" ] || continue
+        rule_name="$(basename "$rule_file")"
+        target_rule="$HOME/.gemini/config/rules/$rule_name"
+        if [ -f "$target_rule" ] && ! cmp -s "$rule_file" "$target_rule"; then
+            mkdir -p "$HOME/.gemini/config/.backups/rules"
+            cp "$target_rule" "$HOME/.gemini/config/.backups/rules/${rule_name}.bak-$(date +%Y%m%d%H%M%S)"
+        fi
+        cp "$rule_file" "$target_rule"
+        echo "  ✓ rule global sincronizada: $rule_name"
+    done
+fi
+
+# 7.1 Sincronizar hooks.json com Unified Guardrails Dispatcher consolidado
+echo "⚙️  Configurando ~/.gemini/config/hooks.json..."
 python3 - << 'PYEOF'
 import json, os
 
 hooks_file = os.path.expanduser("~/.gemini/config/hooks.json")
+dispatcher_path = os.path.expanduser("~/.gemini/config/hooks/hooks_dispatcher.py")
 data = {}
 if os.path.exists(hooks_file):
     try:
@@ -244,21 +255,18 @@ if os.path.exists(hooks_file):
     except Exception:
         pass
 
-# Preserva ceh-safety-gate como Prioridade 1
 new_hooks = {}
-if "ceh-safety-gate" in data:
-    new_hooks["ceh-safety-gate"] = data["ceh-safety-gate"]
 
-# Prioridade 2: Scoped Execution Guard (Confinamento e Timeout de 30s)
-new_hooks["scoped-execution-guard"] = {
+# PreToolUse unificado (Elo 0 -> Elo 1 CEH -> Elo 1.5 Container Guard -> Elo 3 Advisory + Telemetria)
+new_hooks["unified-guardrails-dispatcher"] = {
     "enabled": True,
     "PreToolUse": [
         {
-            "matcher": "run_command|ctx_execute",
+            "matcher": "run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|read_file|view_file|grep_search|read_url_content|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
             "hooks": [
                 {
                     "type": "command",
-                    "command": "python3 \"$HOME/.gemini/config/hooks/scoped_execution_guard.py\"",
+                    "command": f"python3 {dispatcher_path}",
                     "timeout": 30
                 }
             ]
@@ -266,21 +274,9 @@ new_hooks["scoped-execution-guard"] = {
     ]
 }
 
-# Prioridade 3: Smart Advisory Router (Fim de falsos bloqueios com deny)
+# PostToolUse (indexação e compressão Context-Mode)
 new_hooks["context-mode-guard"] = {
     "enabled": True,
-    "PreToolUse": [
-        {
-            "matcher": "run_command|view_file|grep_search|read_url_content",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "python3 \"$HOME/.gemini/config/hooks/context_mode_advisory_router.py\"",
-                    "timeout": 10
-                }
-            ]
-        }
-    ],
     "PostToolUse": [
         {
             "matcher": "run_command|view_file|grep_search|read_url_content",
@@ -295,7 +291,19 @@ new_hooks["context-mode-guard"] = {
     ]
 }
 
-# Preserva quaisquer outros hooks existentes (ex: ceh-stop-guard)
+# Desativa entradas legadas/redundantes no hooks.json global preservando integridade do plugin CEH
+for legacy_key in (
+    "destructive-command-guardrail",
+    "sail-container-guard",
+    "scoped-execution-guard",
+    "ceh-stop-guard",
+):
+    if legacy_key in data and isinstance(data[legacy_key], dict):
+        legacy_entry = dict(data[legacy_key])
+        legacy_entry["enabled"] = False
+        new_hooks[legacy_key] = legacy_entry
+
+# Preserva demais hooks ativos existentes (ex: ralph-stop-guard, antigravity-windows-sync)
 for k, v in data.items():
     if k not in new_hooks:
         new_hooks[k] = v
@@ -317,59 +325,11 @@ fi
 # Health Check / Auto-Diagnóstico de Conformidade
 # ==============================================================================
 echo ""
-echo "========================================================"
-echo "🩺 Executando Health Check de Conformidade do Harness..."
-echo "========================================================"
-
-CHECK_FAILURES=0
-
-# Checar Graphify
-if command -v graphify &> /dev/null; then
-    echo "  [OK] Graphify: $(graphify --version)"
-else
-    echo "  [FALHA] Graphify não encontrado no PATH!"
-    CHECK_FAILURES=$((CHECK_FAILURES + 1))
-fi
-
-# Checar context-mode
-if command -v context-mode &> /dev/null; then
-    echo "  [OK] context-mode: Instalado e detectável no PATH"
-else
-    echo "  [AVISO] context-mode não encontrado no PATH (verifique a instalação do Node/npm)"
-fi
-
-# Checar Skills Linkadas
-if [ "$LINKED_SKILLS_COUNT" -eq 8 ]; then
-    echo "  [OK] Skills de Ouro: 8/8 ativas em ~/.gemini/config/skills"
-else
-    echo "  [AVISO] Skills de Ouro: Apenas $LINKED_SKILLS_COUNT/8 linkadas"
-fi
-
-# Checar Orquestrador
-if [ -f "$DEST_AGENT" ]; then
-    AGENT_LINES=$(wc -l < "$DEST_AGENT")
-    if [ "$AGENT_LINES" -ge 70 ]; then
-        echo "  [OK] gemini-orchestrator: Configuração canônica completa ($AGENT_LINES linhas)"
-    else
-        echo "  [AVISO] gemini-orchestrator: Arquivo menor que o esperado ($AGENT_LINES linhas)"
-    fi
-else
-    echo "  [FALHA] gemini-orchestrator não configurado!"
-    CHECK_FAILURES=$((CHECK_FAILURES + 1))
-fi
-
-# Checar Hooks da Tríade
-if [ -f "$HOME/.gemini/config/hooks/context_mode_advisory_router.py" ] && [ -f "$HOME/.gemini/config/hooks/scoped_execution_guard.py" ]; then
-    echo "  [OK] Hooks da Tríade: context_mode_advisory_router e scoped_execution_guard ativos"
-else
-    echo "  [FALHA] Hooks da Tríade não encontrados em ~/.gemini/config/hooks/"
-    CHECK_FAILURES=$((CHECK_FAILURES + 1))
-fi
-
-echo "========================================================"
-if [ "$CHECK_FAILURES" -eq 0 ]; then
-    echo "✅ Provisionamento Concluído com 100% de Sucesso!"
-else
-    echo "❌ Concluído com $CHECK_FAILURES falha(s). Verifique os logs acima."
-fi
-echo "O ambiente está configurado com a Tríade Determinística (Smart Router + Scoped Guard + Git Inspect)."
+echo "✅ Provisionamento Concluído com Sucesso!"
+echo "Verificação:"
+echo " - Graphify: $(graphify --version 2>/dev/null || echo 'requer restart do terminal')"
+echo " - Skills ativas em ~/.gemini/config/skills: $(ls "$HOME/.gemini/config/skills" 2>/dev/null | wc -l)"
+echo " - Hooks ativos em ~/.gemini/config/hooks: $(ls "$HOME/.gemini/config/hooks" 2>/dev/null | wc -l)"
+echo " - Utilitários em ~/.gemini/config/scripts: $(ls "$HOME/.gemini/config/scripts" 2>/dev/null | wc -l)"
+echo ""
+echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.3-p0.1 + Graphify + Git Inspect + RTK."

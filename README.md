@@ -1,5 +1,5 @@
-# 🚀 Antigravity Harness Enhancements (v3.4)
-### *Eficiência de Tokens Zero-LLM, Regras `always_on` Enxutas & Unified Guardrails Dispatcher*
+# 🚀 Antigravity Harness Enhancements (v3.5)
+### *Eficiência de Tokens Zero-LLM, Elo 3 `overwrite` Determinístico & Unified Guardrails Dispatcher*
 
 Repositório dedicado ao enriquecimento de contexto, eliminação de vazamento de logs, confinamento seguro de subprocessos e economia comprovada de tokens e latência no **Antigravity CLI (agy)** e **Antigravity IDE**.
 
@@ -8,12 +8,15 @@ Repositório dedicado ao enriquecimento de contexto, eliminação de vazamento d
 ## 🧱 Arquitetura Consolidada
 
 1. **Graphify (Knowledge Graph AST):** analisa o repositório deterministicamente via Tree-Sitter (AST) e gera `graph.json` + `GRAPH_REPORT.md` para navegação relacional precisa com **custo zero de LLM**. Consultas focadas (`query`/`path`/`explain`) substituem `grep` cego e leitura massiva de arquivos.
-2. **Unified Guardrails Dispatcher (`hooks/hooks_dispatcher.py` — `v0.9.2-p0.1`):** orquestrador monoprocesso `PreToolUse` que consolida os guardrails sem spawning múltiplo:
+2. **Unified Guardrails Dispatcher (`hooks/hooks_dispatcher.py` — `v0.9.3-p0.1`):** orquestrador monoprocesso `PreToolUse` que consolida os guardrails sem spawning múltiplo:
    - **Elo 0 (Normalizador Universal & Confinamento Inteligente):** desembrulha envelopes `call_mcp_tool`, inspeciona Python (`ast.parse`), JS e Shell, aplica política *fail-closed* para código `UNINSPECTABLE`, protege `.ceh/`, `.git/` e diretórios de sistema, e confina escritas ao workspace, `/tmp`, artefatos (`~/.gemini/antigravity/brain`) e repositórios em `~/projects`.
    - **Elo 1 (CEH Safety Gate):** delega validação de ambiente (`DEV`/`STAGING`/`PROD`) ao motor oficial `clearer-engineering`.
    - **Elo 1.5 (Container & Sail Guard):** identifica projetos Docker/Sail (`docker-compose.yml`, `vendor/bin/sail`, `.env.docker`) e solicita confirmação (`decision: ask`) caso `php artisan` seja direcionado ao host fora do container.
-   - **Elo 3 (Smart Advisory Router + Fallback `context_mode_advisory_router.py`):** libera comandos delimitados e prefixo `rtk` em fast-path em memória, roteando apenas comandos abertos ao `context-mode`.
-   - **Telemetria Multi-Terminal Anonimizada (`telemetry/runs/` + `scripts/sync_telemetry.sh`):** registra metadados append-only (`ts`, `terminal`, `tool`, `decision`, `latency_ms`, `rule`) sem código ou segredos.
+   - **Elo 3 (Smart Advisory Router em 3 Estágios — `context_mode_advisory_router.py`):**
+     - *Estágio 3.1 (`SAFE_NATIVE_ALLOWLIST`):* libera comandos delimitados e variantes enxutas de `git diff` (`--stat`, `--check`, `--numstat`, `--shortstat`, `--name-only`, `--name-status`) em memória (`allow` silencioso).
+     - *Estágio 3.2 (`compute_deterministic_overwrite` — `HOOK-OPT-03`):* reescreve comandos seguros e verbosos diretamente em memória retornando `{"decision": "allow", "overwrite": {"CommandLine": ...}}` (`[ELO3-OVERWRITE-RTK]` para `git diff`, `git log -n 30`, `pytest`, `cargo/npm/pnpm/go test`, `ruff check`, `golangci-lint`; `[ELO3-OVERWRITE-BOUND]` com `| head -n 100` para `find` somente leitura, `ls -R` e `tree`), eliminando turnos extras de `deny + retry` e o subprocesso `context-mode`.
+     - *Estágio 3.3 (Fallback `context-mode`):* delega comandos complexos/multi-statement e HTTP (`curl`/`wget`) ao hook oficial (`timeout=0.50 s`).
+   - **Telemetria Multi-Terminal Anonimizada (`telemetry/runs/` + `scripts/sync_telemetry.sh`):** registra metadados append-only (`ts`, `terminal`, `tool`, `decision` incluindo `"overwrite"`, `latency_ms`, `rule`) sem código ou segredos.
 3. **Scoped Execution Guard (`scoped_execution_guard.py`):** módulo integrado ao dispatcher que intercepta varreduras abertas recursivas na raiz/home (`find /`, `find ~`) em $< 5\text{ ms}$, impõe timeout estrito de 30s por subprocesso e garante encerramento em árvore via `os.killpg` (zero processos zumbis).
 4. **Ferramental Declarativo Git (`git_inspect.py`):** utilitário parametrizado em JSON que responde em **40,2 ms**, cortando a geração procedural ad-hoc de scripts Python em sessões com Context-Mode.
 5. **Compressão Determinística de Terminal (RTK):** suporte transparente no dispatcher e router para prefixo `rtk`, condensando logs de terminal com redução de **56,1% em bytes** e **75,6% em linhas**.
@@ -45,6 +48,7 @@ Medições comparativas pós-consolidação (`RUN-2026-11-14-HOOK-OPT-02-CONSOLI
 | **Container & Sail Guard — Elo 1.5 (`CB-03`)** | 167,10 ms (`deny` precoce) | **74,86 ms (`ask` orientativo)** | **-55,2% + precedência correta** |
 | **Confinamento Multi-Repo e Artefatos (`CB-06`, `CB-07`)** | `deny` (falso positivo) | **`allow` (~74 ms)** | **Zero falsos bloqueios (`CB-08` segue `deny`)** |
 | **Carga Fixa de Regras `always_on` (`RULE-OPT-01`)** | 40.079 B (`AGENTS.md` truncado em 978 B) | **22.798 B (`AGENTS.md` 12.092 B)** | **`-43,12%` em bytes/turno + zero truncamento (32/32 cláusulas)** |
+| **Elo 3 Determinístico — `overwrite` (`HOOK-OPT-03`, $N=1000$)** | 221,38 ms (`deny`, `2` turnos) | **106,97 ms (`allow + overwrite`, `1` turno)** | **`-51,7%` de latência + eliminação de turno extra (`OVW-02..07`)** |
 
 ---
 
@@ -60,7 +64,7 @@ O script automaticamente:
 1. Instala e atualiza `graphify` e `context-mode`.
 2. Sincroniza a suíte canônica de skills em `~/.gemini/config/skills/`.
 3. Registra o agente `gemini-orchestrator`.
-4. Instala `hooks_dispatcher.py` (Unified Guardrails Dispatcher `v0.9.2-p0.1`) junto aos módulos `context_mode_advisory_router.py` e `scoped_execution_guard.py` em `~/.gemini/config/hooks/`.
+4. Instala `hooks_dispatcher.py` (Unified Guardrails Dispatcher `v0.9.3-p0.1`) junto aos módulos `context_mode_advisory_router.py` e `scoped_execution_guard.py` em `~/.gemini/config/hooks/`.
 5. Instala os utilitários `git_inspect.py` e `sync_telemetry.sh` em `~/.gemini/config/scripts/`, e sincroniza as regras globais enxutas (`rules/*.md`) em `~/.gemini/config/rules/` (com backup em `~/.gemini/config/.backups/rules/`).
 6. Configura `~/.gemini/config/hooks.json`:
    - `PreToolUse`: `unified-guardrails-dispatcher` cobrindo 15 ferramentas (`run_command`, `ctx_execute`, `ctx_batch_execute`, `ctx_execute_file`, `ctx_purge`, `call_mcp_tool`, `read_file`, `view_file`, `grep_search`, `read_url_content`, `write_file`, `edit_file`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`).

@@ -12,6 +12,7 @@ Implementa:
   6. Confinamento de Filesystem e Proteção de Workspace (.ceh/, .git/, caminhos absolutos).
   7. Catálogo de 42 Ferramentas Mapeadas e Heurística Conservadora para Ferramentas Desconhecidas.
   8. Elo 1.5 integrado: Container & Sail Guard (ask quando php artisan roda fora de Docker/Sail).
+  9. Elo 3 (HOOK-OPT-03): Reescrita determinística (allow + overwrite) antes do fallback externo.
 """
 
 import sys
@@ -26,7 +27,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Set
 
 # Constantes de Versão e Governança
-DISPATCHER_VERSION = "0.9.2-p0.1"
+DISPATCHER_VERSION = "0.9.3-p0.1"
 MAX_WRAPPER_DEPTH = 3
 
 # Localização e carregamento dos módulos do harness
@@ -65,9 +66,13 @@ except Exception as e:
 # Elo 3: Smart Advisory Router (context-mode)
 _ADVISORY_ROUTER_AVAILABLE = False
 _ADVISORY_ROUTER_ERROR = None
+compute_deterministic_overwrite = None
 try:
     import context_mode_advisory_router
     is_deliberately_bounded = context_mode_advisory_router.is_deliberately_bounded
+    compute_deterministic_overwrite = getattr(
+        context_mode_advisory_router, "compute_deterministic_overwrite", None
+    )
     _ADVISORY_ROUTER_AVAILABLE = True
 except Exception as e:
     _ADVISORY_ROUTER_ERROR = e
@@ -737,13 +742,28 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
         if is_deliberately_bounded(cmd_to_route):
             return None, 0
 
+        if compute_deterministic_overwrite is not None:
+            ovw = compute_deterministic_overwrite(cmd_to_route)
+            if ovw is not None:
+                rewritten_cmd, rule_tag = ovw
+                arg_key = (
+                    "CommandLine"
+                    if "CommandLine" in normalized.original_args
+                    else ("command" if "command" in normalized.original_args else "CommandLine")
+                )
+                return {
+                    "decision": "allow",
+                    "overwrite": {arg_key: rewritten_cmd},
+                    "reason": f"{rule_tag} Comando reescrito deterministicamente para economia de contexto: {rewritten_cmd}",
+                }, 0
+
         try:
             proc = subprocess.run(
                 ["context-mode", "hook", "antigravity-cli", "pretooluse"],
                 input=raw_input,
                 capture_output=True,
                 text=True,
-                timeout=0.25
+                timeout=0.50
             )
             if proc.stdout and proc.stdout.strip():
                 try:
@@ -820,7 +840,10 @@ def _record_telemetry(raw_input: str, resp_dict: Optional[Dict[str, Any]], exit_
         decision = "allow"
         rule_tag = None
         if resp_dict:
-            decision = resp_dict.get("decision", "allow")
+            if resp_dict.get("overwrite"):
+                decision = "overwrite"
+            else:
+                decision = resp_dict.get("decision", "allow")
             reason = resp_dict.get("reason", "")
             if reason:
                 m = re.match(r"^(\[[A-Z0-9_\-\s]+\])", reason)

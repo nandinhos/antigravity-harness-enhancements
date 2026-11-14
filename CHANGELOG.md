@@ -18,6 +18,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   - Geração do `~/.gemini/config/hooks.json` utilizando `"unified-guardrails-dispatcher"` com o `matcher` completo de 15 ferramentas (`run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|read_file|view_file|grep_search|read_url_content|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content`).
   - Desativação explícita (`"enabled": false`) das entradas globais legadas/redundantes `"sail-container-guard"`, `"destructive-command-guardrail"` e `"ceh-stop-guard"` (mantendo `ceh-stop-guard` e `ceh-safety-gate` ativos via manifesto do plugin `clearer-engineering`).
 - **Documentação Base (`README.md`)**: atualizada para `v3.3` refletindo o Unified Guardrails Dispatcher, telemetria multi-terminal e novo fluxo do `bootstrap-workstation.sh`.
+- **Homologação Comparativa Pós-Consolidação (`RUN-2026-11-14-HOOK-OPT-02-CONSOLIDATED`)**: suíte de 9 cenários $\times 50$ repetições em subprocessos reais (`100% PASS`) comprovando redução média de **`-31,4%`** nos fluxos deduplicados (`-24,4%` em `run_command` Git, `-21,3%` em Docker/Sail delimitado, **`-49,6%`** no evento `Stop`), **`-55,2%`** com correção de precedência no Elo 1.5 (`CB-03`: `deny` `167,10 ms` $\to$ `ask` `74,86 ms`) e eliminação dos falsos bloqueios em `~/projects/` e `brain/` mantendo proteção em `~/.gemini/config/hooks.json`.
 
 ## [3.2.0] - 2026-11-08
 

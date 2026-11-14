@@ -35,6 +35,15 @@ Bateria de medições empíricas instrumentadas e auditadas através dos benchma
 | **Interrupção de Varredura Perigosa (`find ~`)** | 180s (hang síncrono do harness) | **< 5 milissegundos** | **Proteção determinística imediata** |
 | **Processos Zumbis Restantes pós-Timeout** | 1 a 3 processos órfãos | **0 processos (limpeza killpg)** | **Zero resíduo de subprocessos** |
 
+Medições comparativas pós-consolidação (`RUN-2026-11-14-HOOK-OPT-02-CONSOLIDATED`, `v0.9.1` + hooks legados vs `v0.9.2-p0.1` unificado, $N=50$ por cenário):
+
+| Cenário Pós-Consolidação (`v3.3`) | Pré-Consolidação | Pós-Consolidação (`v0.9.2-p0.1`) | Ganho Líquido Comprovado |
+|---|---|---|---|
+| **Redução de Subprocessos (`CB-01`, `CB-02`, `CB-09`)** | 97,64 ms (2 processos) | **67,02 ms (1 processo)** | **-31,4% de latência média** |
+| **Evento `Stop` Deduplicado (`CB-09`)** | 93,32 ms ($2\times$ `ceh-stop-guard`) | **47,04 ms ($1\times$ no plugin)** | **-49,6% na média (-51,0% p50)** |
+| **Container & Sail Guard — Elo 1.5 (`CB-03`)** | 167,10 ms (`deny` precoce) | **74,86 ms (`ask` orientativo)** | **-55,2% + precedência correta** |
+| **Confinamento Multi-Repo e Artefatos (`CB-06`, `CB-07`)** | `deny` (falso positivo) | **`allow` (~74 ms)** | **Zero falsos bloqueios (`CB-08` segue `deny`)** |
+
 ---
 
 ## 🚀 Instalação e Sincronização da Estação (1 Clique)

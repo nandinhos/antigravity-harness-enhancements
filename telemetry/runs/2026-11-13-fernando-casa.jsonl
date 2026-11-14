@@ -113,3 +113,13 @@
 {"ts": "2026-11-13T05:11:24Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 55.6, "rule": null}
 {"ts": "2026-11-13T05:15:28Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "deny", "latency_ms": 2.91, "rule": "[CEH SAFETY GATE - FAIL-CLOSED]"}
 {"ts": "2026-11-13T05:15:35Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 69.39, "rule": null}
+{"ts": "2026-11-13T05:15:40Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 55.0, "rule": null}
+{"ts": "2026-11-13T05:15:46Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 7.98, "rule": null}
+{"ts": "2026-11-13T21:08:16Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 7.71, "rule": null}
+{"ts": "2026-11-13T21:08:20Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 7.67, "rule": null}
+{"ts": "2026-11-13T21:08:27Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 5.96, "rule": null}
+{"ts": "2026-11-13T21:08:32Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 7.08, "rule": null}
+{"ts": "2026-11-13T21:08:34Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 8.45, "rule": null}
+{"ts": "2026-11-13T21:08:37Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 8.98, "rule": null}
+{"ts": "2026-11-13T21:08:50Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 8.0, "rule": null}
+{"ts": "2026-11-13T21:08:58Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 10.25, "rule": null}

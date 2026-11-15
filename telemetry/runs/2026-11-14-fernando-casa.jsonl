@@ -452,3 +452,8 @@
 {"ts": "2026-11-14T22:23:27Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 142.77, "rule": null}
 {"ts": "2026-11-14T22:23:36Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 212.88, "rule": null}
 {"ts": "2026-11-14T22:23:52Z", "terminal": "fernando-casa", "tool": "run_command", "decision": "allow", "latency_ms": 191.71, "rule": null}
+{"ts": "2026-11-14T23:38:17Z", "terminal": "fernando-casa", "tool": "read_file", "decision": "allow", "latency_ms": 0.07, "rule": null}
+{"ts": "2026-11-14T23:38:17Z", "terminal": "fernando-casa", "tool": "read_file", "decision": "allow", "latency_ms": 0.04, "rule": null}
+{"ts": "2026-11-14T23:38:40Z", "terminal": "fernando-casa", "tool": "read_file", "decision": "allow", "latency_ms": 0.05, "rule": null}
+{"ts": "2026-11-14T23:38:40Z", "terminal": "fernando-casa", "tool": "read_file", "decision": "allow", "latency_ms": 0.06, "rule": null}
+{"ts": "2026-11-14T23:38:51Z", "terminal": "fernando-casa", "tool": "read_file", "decision": "allow", "latency_ms": 0.05, "rule": null}

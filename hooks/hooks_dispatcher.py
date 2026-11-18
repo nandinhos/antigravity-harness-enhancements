@@ -15,19 +15,21 @@ Implementa:
   9. Elo 3 (HOOK-OPT-03): Reescrita determinística (allow + overwrite) antes do fallback externo.
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import json
 import re
-import ast
 import time
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List, Set
 
+_MODULE_LOAD_START = time.perf_counter()
+
 # Constantes de Versão e Governança
-DISPATCHER_VERSION = "0.9.3-p0.1"
+DISPATCHER_VERSION = "0.9.4-ponytail"
 MAX_WRAPPER_DEPTH = 3
 
 # Localização e carregamento dos módulos do harness
@@ -36,46 +38,90 @@ PLUGIN_CEH_SCRIPTS = Path.home() / ".gemini" / "config" / "plugins" / "clearer-e
 HARNESS_DIR = Path.home() / ".gemini" / "config" / "hooks"
 LOCAL_HOOKS_DIR = Path(__file__).resolve().parent
 
-for p in (DEV_CEH_SCRIPTS, PLUGIN_CEH_SCRIPTS, HARNESS_DIR, LOCAL_HOOKS_DIR):
+for p in (DEV_CEH_SCRIPTS, PLUGIN_CEH_SCRIPTS, HARNESS_DIR):
     if p.is_dir() and str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-# Elo 1: CEH Safety Gate (destructive_command_guardrail)
+# Precedência estrita aos módulos irmãos (permite testes/benchmarks em clone ou worktree sem shadowing global)
+if LOCAL_HOOKS_DIR.is_dir():
+    local_str = str(LOCAL_HOOKS_DIR)
+    if local_str in sys.path:
+        sys.path.remove(local_str)
+    sys.path.insert(0, local_str)
+
+# Elo 1: CEH Safety Gate (carregamento lazy)
+_SAFETY_GATE_LOADED = False
 _SAFETY_GATE_AVAILABLE = False
 _SAFETY_GATE_ERROR = None
-try:
-    import importlib
-    _hc = importlib.import_module("hook_context")
-    _engine = importlib.import_module("ceh_core.engine")
-    handle_hook_lifecycle = getattr(_hc, "handle_hook_lifecycle")
-    evaluate_ceh = getattr(_engine, "evaluate")
-    _SAFETY_GATE_AVAILABLE = True
-except Exception as e:
-    _SAFETY_GATE_ERROR = e
+handle_hook_lifecycle = None
+evaluate_ceh = None
 
-# Elo 2: Scoped Execution Guard
+
+def _ensure_safety_gate() -> bool:
+    global _SAFETY_GATE_LOADED, _SAFETY_GATE_AVAILABLE, _SAFETY_GATE_ERROR, handle_hook_lifecycle, evaluate_ceh
+    if _SAFETY_GATE_LOADED:
+        return _SAFETY_GATE_AVAILABLE
+    _SAFETY_GATE_LOADED = True
+    try:
+        import importlib
+        _hc = importlib.import_module("hook_context")
+        _engine = importlib.import_module("ceh_core.engine")
+        handle_hook_lifecycle = getattr(_hc, "handle_hook_lifecycle")
+        evaluate_ceh = getattr(_engine, "evaluate")
+        _SAFETY_GATE_AVAILABLE = True
+    except Exception as e:
+        _SAFETY_GATE_ERROR = e
+        _SAFETY_GATE_AVAILABLE = False
+    return _SAFETY_GATE_AVAILABLE
+
+
+# Elo 2: Scoped Execution Guard (carregamento lazy)
+_SCOPED_GUARD_LOADED = False
 _SCOPED_GUARD_AVAILABLE = False
 _SCOPED_GUARD_ERROR = None
-try:
-    import scoped_execution_guard
-    check_unbounded_scan = scoped_execution_guard.check_unbounded_scan
-    _SCOPED_GUARD_AVAILABLE = True
-except Exception as e:
-    _SCOPED_GUARD_ERROR = e
+check_unbounded_scan = None
 
-# Elo 3: Smart Advisory Router (context-mode)
+
+def _ensure_scoped_guard() -> bool:
+    global _SCOPED_GUARD_LOADED, _SCOPED_GUARD_AVAILABLE, _SCOPED_GUARD_ERROR, check_unbounded_scan
+    if _SCOPED_GUARD_LOADED:
+        return _SCOPED_GUARD_AVAILABLE
+    _SCOPED_GUARD_LOADED = True
+    try:
+        import scoped_execution_guard
+        check_unbounded_scan = scoped_execution_guard.check_unbounded_scan
+        _SCOPED_GUARD_AVAILABLE = True
+    except Exception as e:
+        _SCOPED_GUARD_ERROR = e
+        _SCOPED_GUARD_AVAILABLE = False
+    return _SCOPED_GUARD_AVAILABLE
+
+
+# Elo 3: Smart Advisory Router (context-mode, carregamento lazy)
+_ADVISORY_ROUTER_LOADED = False
 _ADVISORY_ROUTER_AVAILABLE = False
 _ADVISORY_ROUTER_ERROR = None
+is_deliberately_bounded = None
 compute_deterministic_overwrite = None
-try:
-    import context_mode_advisory_router
-    is_deliberately_bounded = context_mode_advisory_router.is_deliberately_bounded
-    compute_deterministic_overwrite = getattr(
-        context_mode_advisory_router, "compute_deterministic_overwrite", None
-    )
-    _ADVISORY_ROUTER_AVAILABLE = True
-except Exception as e:
-    _ADVISORY_ROUTER_ERROR = e
+
+
+def _ensure_advisory_router() -> bool:
+    global _ADVISORY_ROUTER_LOADED, _ADVISORY_ROUTER_AVAILABLE, _ADVISORY_ROUTER_ERROR
+    global is_deliberately_bounded, compute_deterministic_overwrite
+    if _ADVISORY_ROUTER_LOADED:
+        return _ADVISORY_ROUTER_AVAILABLE
+    _ADVISORY_ROUTER_LOADED = True
+    try:
+        import context_mode_advisory_router
+        is_deliberately_bounded = context_mode_advisory_router.is_deliberately_bounded
+        compute_deterministic_overwrite = getattr(
+            context_mode_advisory_router, "compute_deterministic_overwrite", None
+        )
+        _ADVISORY_ROUTER_AVAILABLE = True
+    except Exception as e:
+        _ADVISORY_ROUTER_ERROR = e
+        _ADVISORY_ROUTER_AVAILABLE = False
+    return _ADVISORY_ROUTER_AVAILABLE
 
 # Delimitadores lexicais para fronteiras de comandos em código (espaço, aspas, parênteses, ponto-e-vírgula ou fim de linha)
 _PATH_BOUNDARY = r"(?:['\";\)\]\}\s]|$)"
@@ -180,7 +226,7 @@ def classify_language(canonical_name: str, code_snippet: str, declared_lang: Opt
     Linguagens: "SHELL", "PYTHON", "JAVASCRIPT", "UNKNOWN", "OTHER".
     Fontes: "DECLARED", "TOOL_CONTRACT", "AST_VERIFIED", "LEXICAL_HEURISTIC", "UNRESOLVED".
     """
-    if canonical_name == "run_command":
+    if canonical_name in ("run_command", "ctx_batch_execute"):
         return "SHELL", "TOOL_CONTRACT"
 
     code_clean = code_snippet.strip()
@@ -201,6 +247,7 @@ def classify_language(canonical_name: str, code_snippet: str, declared_lang: Opt
 
     # 2. Ausência de metadado: Nunca pressupor shell silenciosamente!
     # 2.1 Análise via AST de Python
+    import ast
     try:
         tree = ast.parse(code_clean)
         is_python_indicator = False
@@ -253,6 +300,7 @@ def classify_language(canonical_name: str, code_snippet: str, declared_lang: Opt
 
 def _get_func_qualname(node: ast.AST) -> str:
     """Extrai recursivamente o nome qualificado de uma função na AST (ex: 'os.system')."""
+    import ast
     if isinstance(node, ast.Name):
         return node.id
     elif isinstance(node, ast.Attribute):
@@ -269,6 +317,7 @@ def inspect_python_code(code_str: str) -> Tuple[str, Optional[str]]:
       - ("UNINSPECTABLE", reason): Metaprogramação opaca ou não compilável.
       - ("ALLOW", None): Código analisado com sucesso e limpo.
     """
+    import ast
     try:
         tree = ast.parse(code_str)
     except SyntaxError as e:
@@ -293,7 +342,7 @@ def inspect_python_code(code_str: str) -> Tuple[str, Optional[str]]:
                             if re.search(pattern, cmd_literal, re.IGNORECASE):
                                 return "DENY", f"[CEH MCP PYTHON SECURITY] Chamada destrutiva em {func_name}: {reason} ('{cmd_literal}')"
                         # Avalia contra Scoped Execution Guard
-                        if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_literal):
+                        if _ensure_scoped_guard() and check_unbounded_scan(cmd_literal):
                             return "DENY", f"[CEH MCP PYTHON SECURITY] Varredura não delimitada em {func_name}: '{cmd_literal}'"
                     else:
                         return "UNINSPECTABLE", f"Chamada a {func_name} com comando dinâmico ou variável não estática."
@@ -335,27 +384,110 @@ def inspect_python_code(code_str: str) -> Tuple[str, Optional[str]]:
     return "ALLOW", None
 
 
+_JS_STR_OR_ARG_PAT = (
+    r"('(?:\\.|[^'\\])*'"
+    r"|\"(?:\\.|[^\"\\])*\""
+    r"|`(?:\\.|[^`\\])*`"
+    r"|[^,\)\n]+)"
+)
+_JS_PROC_CALL_RE = re.compile(
+    r"\b(?:Bun\.(?:spawnSync|spawn)|execFileSync|execSync|execFile|spawnSync|spawn|exec)\s*\(\s*"
+    + _JS_STR_OR_ARG_PAT
+)
+_JS_FS_DELETE_RE = re.compile(
+    r"\b(?:rmSync|rmdirSync|unlinkSync|rm|rmdir|unlink)\s*\(\s*"
+    + _JS_STR_OR_ARG_PAT
+)
+_JS_FS_WRITE_RE = re.compile(
+    r"\b(?:writeFileSync|appendFileSync|writeFile|appendFile)\s*\(\s*('(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`)"
+)
+_JS_SYSTEM_PREFIXES = ("/etc", "/root", "/sys", "/proc", "/bin", "/sbin", "/usr")
+
+
+def _extract_js_static_literal(arg_expr: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Extrai string literal estática em JS ('...', "..." ou `...` sem ${}).
+    Retorna (literal_value, uninspectable_reason).
+    """
+    expr = arg_expr.strip()
+    if len(expr) >= 2 and expr[0] == expr[-1] and expr[0] in ("'", '"'):
+        return expr[1:-1], None
+    if expr.startswith("`"):
+        if not expr.endswith("`") or len(expr) < 2 or "${" in expr:
+            return None, "Template literal dinâmico ou malformado em JavaScript sem sandbox."
+        return expr[1:-1], None
+    return None, "Argumento dinâmico ou não-literal em JavaScript sem sandbox."
+
+
 def inspect_javascript_code(code_str: str) -> Tuple[str, Optional[str]]:
     """
-    Inspeção estática de código JavaScript / Node.js.
+    Inspeção estática de código JavaScript / Node.js / Bun (fail-closed em chamadas dinâmicas).
     """
     # 1. Metaprogramação opaca
     if re.search(r"\b(?:eval|Function)\s*\(", code_str):
         return "UNINSPECTABLE", "Uso de eval/Function dinâmica em JavaScript sem sandbox."
 
-    # 2. Chamadas a child_process com literais
-    js_proc_calls = re.findall(r"(?:execSync|exec|spawn|spawnSync)\s*\(\s*(['\"][^'\"]+['\"])", code_str)
-    for call_arg in js_proc_calls:
-        cmd_unquoted = call_arg.strip(" '\"\t\r\n")
-        for pattern, reason in HARD_BLOCK_PATTERNS:
-            if re.search(pattern, cmd_unquoted, re.IGNORECASE):
-                return "DENY", f"[CEH MCP JS SECURITY] Execução destrutiva em child_process: {reason} ('{cmd_unquoted}')"
-        if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_unquoted):
-            return "DENY", f"[CEH MCP JS SECURITY] Varredura não delimitada em child_process: '{cmd_unquoted}'"
+    # 2. Todas as invocações de execução de processos (child_process e Bun.spawn)
+    for m in _JS_PROC_CALL_RE.finditer(code_str):
+        arg_expr = m.group(1).strip()
+        tail = code_str[m.end():].lstrip()
+        # Concatenação dinâmica após literal (ex: execSync("rm " + target))
+        if tail.startswith("+"):
+            return "UNINSPECTABLE", "Chamada a processo com concatenação dinâmica em JavaScript."
 
-    # 3. Chamada a child_process com variáveis dinâmicas
-    if re.search(r"(?:execSync|exec|spawn|spawnSync)\s*\(\s*[^'\"\s)]+", code_str) and not js_proc_calls:
-        return "UNINSPECTABLE", "Chamada a child_process com comando dinâmico em JavaScript."
+        cmd_literal, err_reason = _extract_js_static_literal(arg_expr)
+        if cmd_literal is None:
+            return "UNINSPECTABLE", f"Chamada a processo com argumento dinâmico ou não-literal em JavaScript ({err_reason})."
+
+        full_cmd = cmd_literal
+        # Suporte seguro a spawn/execFile com 2º argumento array de flags (ex: spawn("rm", ["-rf", "/"]))
+        if tail.startswith(","):
+            after_comma = tail[1:].lstrip()
+            if after_comma.startswith("["):
+                arr_end = after_comma.find("]")
+                if arr_end == -1:
+                    return "UNINSPECTABLE", "Array de argumentos malformado em chamada de processo JavaScript."
+                arr_body = after_comma[1:arr_end].strip()
+                if arr_body:
+                    arr_parts = [p.strip() for p in arr_body.split(",") if p.strip()]
+                    decoded_parts = []
+                    for part in arr_parts:
+                        lit, _ = _extract_js_static_literal(part)
+                        if lit is None:
+                            return "UNINSPECTABLE", "Array de argumentos com item dinâmico em chamada de processo JavaScript."
+                        decoded_parts.append(lit)
+                    full_cmd = f"{cmd_literal} {' '.join(decoded_parts)}"
+
+        for pattern, reason in HARD_BLOCK_PATTERNS:
+            if re.search(pattern, full_cmd, re.IGNORECASE):
+                return "DENY", f"[CEH MCP JS SECURITY] Execução destrutiva em child_process: {reason} ('{full_cmd}')"
+        if _ensure_scoped_guard() and check_unbounded_scan(full_cmd):
+            return "DENY", f"[CEH MCP JS SECURITY] Varredura não delimitada em child_process: '{full_cmd}'"
+
+    # 3. Deleção direta de filesystem em Node/Bun (rmSync, rmdirSync, unlinkSync, rm, rmdir, unlink)
+    for m in _JS_FS_DELETE_RE.finditer(code_str):
+        arg_expr = m.group(1).strip()
+        tail = code_str[m.end():].lstrip()
+        if tail.startswith("+"):
+            return "UNINSPECTABLE", "Deleção de filesystem em JavaScript com concatenação dinâmica."
+
+        path_literal, err_reason = _extract_js_static_literal(arg_expr)
+        if path_literal is None:
+            return "UNINSPECTABLE", f"Deleção de filesystem em JavaScript com caminho dinâmico ({err_reason})."
+
+        path_clean = path_literal.strip()
+        if path_clean in ("/", "~", "$HOME") or any(path_clean.startswith(d) for d in _JS_SYSTEM_PREFIXES):
+            return "DENY", f"[CEH MCP JS SECURITY] Tentativa de exclusão de caminho crítico do sistema ('{path_clean}')."
+        if re.search(r"(?:^|/)\.(?:git|ceh)(?:/|$)", path_clean, re.IGNORECASE):
+            return "DENY", f"[CEH MCP JS SECURITY] Tentativa de exclusão de diretório protegido ('{path_clean}')."
+
+    # 4. Escrita direta em diretórios protegidos (.ceh/, .git/) em JS
+    for m in _JS_FS_WRITE_RE.finditer(code_str):
+        path_literal, err_reason = _extract_js_static_literal(m.group(1).strip())
+        if path_literal is None:
+            return "UNINSPECTABLE", f"Escrita de arquivo em JavaScript com template literal dinâmico ({err_reason})."
+        if re.search(r"(?:^|/)\.(?:ceh|git)(?:/|$)", path_literal.strip(), re.IGNORECASE):
+            return "DENY", f"[CEH MCP JS SECURITY] Tentativa de escrita em diretório protegido ('{path_literal.strip()}')."
 
     return "ALLOW", None
 
@@ -372,7 +504,7 @@ def inspect_shell_code(cmd_str: str) -> Tuple[str, Optional[str]]:
         if re.search(pattern, cmd_clean, re.IGNORECASE):
             return "DENY", f"[GUARDRAIL BLOQUEOU]: {reason}\nComando/Código rejeitado: '{cmd_clean[:100]}'"
 
-    if _SCOPED_GUARD_AVAILABLE and check_unbounded_scan(cmd_clean):
+    if _ensure_scoped_guard() and check_unbounded_scan(cmd_clean):
         return "DENY", f"[SCOPED GUARD BLOQUEOU]: Varredura irrestrita no sistema detectada ('{cmd_clean[:100]}'). Confinamento ao workspace violado."
 
     return "ALLOW", None
@@ -706,7 +838,7 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                 return _make_deny(f"[CEH UNINSPECTABLE - P0.1] Execução de código arbitrário bloqueada: {reason}")
 
     # Elo 1: CEH Safety Gate para run_command e ferramentas de escrita
-    if _SAFETY_GATE_AVAILABLE and normalized.canonical_name in ("run_command", "write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content"):
+    if normalized.canonical_name in ("run_command", "write_file", "edit_file", "write_to_file", "replace_file_content", "multi_replace_file_content") and _ensure_safety_gate():
         try:
             adapter_tool_name = "write_to_file" if normalized.canonical_name in ("write_file", "edit_file") else normalized.canonical_name
             adapter_args = dict(normalized.original_args)
@@ -722,6 +854,8 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                     "args": adapter_args
                 }
             }
+            if normalized.cwd is not None:
+                adapter_payload["cwd"] = normalized.cwd
             resp_dict, exit_code = handle_hook_lifecycle(json.dumps(adapter_payload), evaluate_ceh)
             dec = resp_dict.get("decision", "allow")
             if dec in ("deny", "ask"):
@@ -737,7 +871,7 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                 return cg_resp, 0
 
     # Elo 3: Smart Advisory Router (apenas para run_command)
-    if _ADVISORY_ROUTER_AVAILABLE and normalized.canonical_name == "run_command":
+    if normalized.canonical_name == "run_command" and _ensure_advisory_router():
         cmd_to_route = normalized.commands[0] if normalized.commands else ""
         if is_deliberately_bounded(cmd_to_route):
             return None, 0
@@ -758,6 +892,7 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
                 }, 0
 
         try:
+            import subprocess
             proc = subprocess.run(
                 ["context-mode", "hook", "antigravity-cli", "pretooluse"],
                 input=raw_input,
@@ -781,6 +916,9 @@ def evaluate_all(raw_input: str) -> Tuple[Optional[Dict[str, Any]], int]:
     return None, 0
 
 
+_CACHED_TERMINAL_ID: Optional[str] = None
+
+
 def _resolve_terminal_id() -> str:
     """
     Descobre o identificador da estação de trabalho respeitando a cascata canônica:
@@ -789,15 +927,20 @@ def _resolve_terminal_id() -> str:
     3. Arquivo de projeto .dev-identity.local (lendo TERMINAL="...")
     4. Fallback: hostname da máquina
     """
+    global _CACHED_TERMINAL_ID
     env_term = os.environ.get("ANTIGRAVITY_TERMINAL") or os.environ.get("TERMINAL")
     if env_term and env_term.strip():
         return env_term.strip()
+
+    if _CACHED_TERMINAL_ID is not None:
+        return _CACHED_TERMINAL_ID
 
     global_cfg = Path.home() / ".gemini" / "config" / "terminal.id"
     if global_cfg.is_file():
         try:
             val = global_cfg.read_text(encoding="utf-8").strip()
             if val:
+                _CACHED_TERMINAL_ID = val
                 return val
         except Exception:
             pass
@@ -810,15 +953,18 @@ def _resolve_terminal_id() -> str:
                 content = idfile.read_text(encoding="utf-8")
                 m = re.search(r'TERMINAL=["\']?([^"\'\n]+)["\']?', content)
                 if m:
-                    return m.group(1).strip()
+                    _CACHED_TERMINAL_ID = m.group(1).strip()
+                    return _CACHED_TERMINAL_ID
     except Exception:
         pass
 
     try:
         import socket
-        return socket.gethostname().split(".")[0]
+        _CACHED_TERMINAL_ID = socket.gethostname().split(".")[0]
+        return _CACHED_TERMINAL_ID
     except Exception:
-        return "unknown-terminal"
+        _CACHED_TERMINAL_ID = "unknown-terminal"
+        return _CACHED_TERMINAL_ID
 
 
 def _record_telemetry(raw_input: str, resp_dict: Optional[Dict[str, Any]], exit_code: int, duration_ms: float):
@@ -885,14 +1031,13 @@ def _record_telemetry(raw_input: str, resp_dict: Optional[Dict[str, Any]], exit_
 
 
 def main():
-    start_time = time.time()
     try:
         raw_input = sys.stdin.read()
     except Exception:
         raw_input = ""
 
     resp_dict, exit_code = evaluate_all(raw_input)
-    duration_ms = (time.time() - start_time) * 1000.0
+    duration_ms = (time.perf_counter() - _MODULE_LOAD_START) * 1000.0
 
     _record_telemetry(raw_input, resp_dict, exit_code, duration_ms)
 

@@ -7,8 +7,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYNC_ONLY=false
+if [ "${1:-}" = "--sync-only" ]; then
+    SYNC_ONLY=true
+fi
 
-echo "🚀 Iniciando provisionamento do Harness Antigravity..."
+echo "🚀 Iniciando provisionamento do Harness Antigravity (sync_only=$SYNC_ONLY)..."
 
 # 0. Ajuste de PATH para subshells não-interativos
 export PATH="$HOME/.gemini/antigravity/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -18,6 +22,7 @@ if [ -d "$HOME/.nvm" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
     \. "$HOME/.nvm/nvm.sh" || true
 fi
 
+if [ "$SYNC_ONLY" = "false" ]; then
 # 1. Dependências Python via uv
 if ! command -v uv &> /dev/null; then
     echo "📦 Instalando Astral uv..."
@@ -120,6 +125,7 @@ if [ ! -d "$HOME/.claude/skills/.git" ]; then
 else
     cd "$HOME/.claude/skills" && git pull origin main && cd - > /dev/null
 fi
+fi
 
 # 5. Criar Symlinks no Antigravity / Gemini
 echo "🔗 Vinculando as 8 Skills de Ouro no Antigravity..."
@@ -135,12 +141,32 @@ SKILLS=(
     "learned-lesson"
 )
 
+BACKUP_TS="$(date +%Y%m%d%H%M%S)"
 for skill in "${SKILLS[@]}"; do
+    PLUGIN_SKILL="$HOME/.gemini/config/plugins/clearer-engineering/skills/$skill/SKILL.md"
+    TARGET_LINK="$HOME/.gemini/config/skills/$skill"
+    if [ -f "$PLUGIN_SKILL" ]; then
+        if [ -L "$TARGET_LINK" ] || [ -e "$TARGET_LINK" ]; then
+            mkdir -p "$HOME/.gemini/config/.backups/skills"
+            mv "$TARGET_LINK" "$HOME/.gemini/config/.backups/skills/${skill}.bak-${BACKUP_TS}"
+            echo "  ♻️  $skill (movido para backup: já exposto pelo plugin clearer-engineering)"
+        else
+            echo "  ✓ $skill (já exposto pelo plugin clearer-engineering)"
+        fi
+        continue
+    fi
     if [ -d "$HOME/.claude/skills/$skill" ]; then
-        ln -sfn "$HOME/.claude/skills/$skill" "$HOME/.gemini/config/skills/$skill"
+        ln -sfn "$HOME/.claude/skills/$skill" "$TARGET_LINK"
         echo "  ✓ $skill"
     fi
 done
+
+# Deduplicar conselho-seniores quando também exposto pelo plugin clearer-engineering
+if [ -f "$HOME/.gemini/config/plugins/clearer-engineering/skills/conselho-seniores/SKILL.md" ] && [ -e "$HOME/.gemini/config/skills/conselho-seniores" ]; then
+    mkdir -p "$HOME/.gemini/config/.backups/skills"
+    mv "$HOME/.gemini/config/skills/conselho-seniores" "$HOME/.gemini/config/.backups/skills/conselho-seniores.bak-${BACKUP_TS}"
+    echo "  ♻️  conselho-seniores (movido para backup: já exposto pelo plugin clearer-engineering)"
+fi
 
 # 6. Garantir template do Orquestrador Gemini
 echo "⚙️  Registrando gemini-orchestrator..."
@@ -186,24 +212,28 @@ echo "⚡ Instalando Hooks e Scripts de Eficiência de Tokens (Tríade Determin�
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$HOME/.gemini/config/hooks"
 mkdir -p "$HOME/.gemini/config/scripts"
+BACKUP_PRE_B="$HOME/.gemini/config/.backups/ponytail-pre-b"
+BACKUP_TS_HOOKS="$(date +%Y%m%d%H%M%S)"
 
-if [ -f "$SCRIPT_DIR/hooks/hooks_dispatcher.py" ]; then
-    cp "$SCRIPT_DIR/hooks/hooks_dispatcher.py" "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
-    chmod +x "$HOME/.gemini/config/hooks/hooks_dispatcher.py"
-    echo "  ✓ hooks_dispatcher.py instalado"
-fi
+_install_with_backup() {
+    local src="$1"
+    local dst="$2"
+    local label="$3"
+    if [ ! -f "$src" ]; then
+        return 0
+    fi
+    if [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
+        mkdir -p "$BACKUP_PRE_B"
+        cp "$dst" "$BACKUP_PRE_B/${label}.bak-${BACKUP_TS_HOOKS}"
+    fi
+    cp "$src" "$dst"
+    chmod +x "$dst"
+    echo "  ✓ $label instalado"
+}
 
-if [ -f "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" ]; then
-    cp "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" "$HOME/.gemini/config/hooks/context_mode_advisory_router.py"
-    chmod +x "$HOME/.gemini/config/hooks/context_mode_advisory_router.py"
-    echo "  ✓ context_mode_advisory_router.py instalado"
-fi
-
-if [ -f "$SCRIPT_DIR/hooks/scoped_execution_guard.py" ]; then
-    cp "$SCRIPT_DIR/hooks/scoped_execution_guard.py" "$HOME/.gemini/config/hooks/scoped_execution_guard.py"
-    chmod +x "$HOME/.gemini/config/hooks/scoped_execution_guard.py"
-    echo "  ✓ scoped_execution_guard.py instalado"
-fi
+_install_with_backup "$SCRIPT_DIR/hooks/hooks_dispatcher.py" "$HOME/.gemini/config/hooks/hooks_dispatcher.py" "hooks_dispatcher.py"
+_install_with_backup "$SCRIPT_DIR/hooks/context_mode_advisory_router.py" "$HOME/.gemini/config/hooks/context_mode_advisory_router.py" "context_mode_advisory_router.py"
+_install_with_backup "$SCRIPT_DIR/hooks/scoped_execution_guard.py" "$HOME/.gemini/config/hooks/scoped_execution_guard.py" "scoped_execution_guard.py"
 
 if [ -f "$SCRIPT_DIR/scripts/git_inspect.py" ]; then
     cp "$SCRIPT_DIR/scripts/git_inspect.py" "$HOME/.gemini/config/scripts/git_inspect.py"
@@ -215,6 +245,17 @@ if [ -f "$SCRIPT_DIR/scripts/sync_telemetry.sh" ]; then
     cp "$SCRIPT_DIR/scripts/sync_telemetry.sh" "$HOME/.gemini/config/scripts/sync_telemetry.sh"
     chmod +x "$HOME/.gemini/config/scripts/sync_telemetry.sh"
     echo "  ✓ sync_telemetry.sh instalado"
+fi
+
+if [ -d "/mnt/c" ] && [ -f "$SCRIPT_DIR/scripts/sync-antigravity-to-windows.py" ]; then
+    TARGET_WIN_SYNC="$HOME/.gemini/config/scripts/sync-antigravity-to-windows.py"
+    if [ -f "$TARGET_WIN_SYNC" ] && ! cmp -s "$SCRIPT_DIR/scripts/sync-antigravity-to-windows.py" "$TARGET_WIN_SYNC"; then
+        mkdir -p "$HOME/.gemini/config/.backups/scripts"
+        cp "$TARGET_WIN_SYNC" "$HOME/.gemini/config/.backups/scripts/sync-antigravity-to-windows.py.bak-$(date +%Y%m%d%H%M%S)"
+    fi
+    cp "$SCRIPT_DIR/scripts/sync-antigravity-to-windows.py" "$TARGET_WIN_SYNC"
+    chmod +x "$TARGET_WIN_SYNC"
+    echo "  ✓ sync-antigravity-to-windows.py instalado"
 fi
 
 # 7.0 Sincronizar Regras Globais always_on enxutas (backup prévio em caso de divergência)
@@ -241,10 +282,12 @@ import json, os
 hooks_file = os.path.expanduser("~/.gemini/config/hooks.json")
 dispatcher_path = os.path.expanduser("~/.gemini/config/hooks/hooks_dispatcher.py")
 data = {}
+raw_old = ""
 if os.path.exists(hooks_file):
     try:
         with open(hooks_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw_old = f.read()
+            data = json.loads(raw_old)
     except Exception:
         pass
 
@@ -255,7 +298,7 @@ new_hooks["unified-guardrails-dispatcher"] = {
     "enabled": True,
     "PreToolUse": [
         {
-            "matcher": "run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|read_file|view_file|grep_search|read_url_content|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+            "matcher": "run_command|ctx_execute|ctx_batch_execute|ctx_execute_file|ctx_purge|call_mcp_tool|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
             "hooks": [
                 {
                     "type": "command",
@@ -301,9 +344,18 @@ for k, v in data.items():
     if k not in new_hooks:
         new_hooks[k] = v
 
-with open(hooks_file, "w", encoding="utf-8") as f:
-    json.dump(new_hooks, f, indent=2, ensure_ascii=False)
-print("  ✓ hooks.json sincronizado com sucesso!")
+rendered = json.dumps(new_hooks, indent=2, ensure_ascii=False)
+if rendered != raw_old:
+    if os.path.exists(hooks_file):
+        import shutil, time
+        backup_dir = os.path.expanduser("~/.gemini/config/.backups/ponytail-pre-b")
+        os.makedirs(backup_dir, exist_ok=True)
+        shutil.copy2(hooks_file, os.path.join(backup_dir, f"hooks.json.bak-{time.strftime('%Y%m%d%H%M%S')}"))
+    with open(hooks_file, "w", encoding="utf-8") as f:
+        f.write(rendered)
+    print("  ✓ hooks.json sincronizado com sucesso!")
+else:
+    print("  ✓ hooks.json já está sincronizado.")
 PYEOF
 
 # 8. Verificação de Ferramentas Complementares (RTK)
@@ -322,4 +374,4 @@ echo " - Skills ativas em ~/.gemini/config/skills: $(ls "$HOME/.gemini/config/sk
 echo " - Hooks ativos em ~/.gemini/config/hooks: $(ls "$HOME/.gemini/config/hooks" 2>/dev/null | wc -l)"
 echo " - Utilitários em ~/.gemini/config/scripts: $(ls "$HOME/.gemini/config/scripts" 2>/dev/null | wc -l)"
 echo ""
-echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.3-p0.1 + Graphify + Git Inspect + RTK."
+echo "O ambiente está configurado com o Unified Guardrails Dispatcher v0.9.4-ponytail + Graphify + Git Inspect + RTK."

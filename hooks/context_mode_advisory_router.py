@@ -33,9 +33,10 @@ SAFE_NATIVE_ALLOWLIST = [
     # Scripts utilitários canônicos (portável entre usuários) e checks determinísticos
     r"^python3\s+(?:/home/[^/\s]+|/Users/[^/\s]+|~|\$HOME)/\.gemini/config/scripts/.*",
     r"^python3\s+-m\s+py_compile\b",
-    r"^(?:\./)?scripts/[a-zA-Z0-9_.-]+\.sh\b",
+    r"^(?:(?:bash|sh)\s+)?(?:\./|(?:/home/[^/\s]+|/Users/[^/\s]+|~|\$HOME)/\S+/)?(?:scripts/|ceh-)[a-zA-Z0-9_.-]+\.sh(?:\s+[^;|&><`\n]*)?$",
     # Utilitários rápidos de sistema, navegação e leitura/manipulação delimitada
-    r"^(pwd|whoami)\b\s*$",
+    r"^(pwd|whoami|date|uname|id|true)\b(?:\s+-[a-zA-Z0-9]+)*\s*$",
+    r"^(?:du\s+-sh|df\s+-h)\b(?:\s+[^\s;|&><`]+)*$",
     r"^(which|echo|head|tail|wc|stat|mkdir|cp|mv|chmod|diff)\b(?:\s+.*)?$",
     r"^ls\b(?![^|]*\s-[a-zA-Z]*R)(?:\s+.*)?$",
     r"^cat\s+(?:-[a-zA-Z]+\s+)*[^\s]+$",
@@ -81,8 +82,16 @@ def _split_and_chains(cmd: str) -> list:
     return parts
 
 
+ENV_ASSIGN_PREFIX_RE = re.compile(
+    r'^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\'[^\']*\'|[^\s;|&><`]+)\s+)+'
+)
+
+
 def _is_single_bounded(segment: str) -> bool:
     cmd_clean = segment.strip()
+    if not cmd_clean:
+        return False
+    cmd_clean = ENV_ASSIGN_PREFIX_RE.sub("", cmd_clean, count=1).strip()
     if not cmd_clean:
         return False
     # Suporte nativo transparente ao prefixo rtk

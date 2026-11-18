@@ -1,0 +1,11 @@
+{"ts": "2026-11-18T13:45:23Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 48.61, "rule": null}
+{"ts": "2026-11-18T13:45:29Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 46.3, "rule": null}
+{"ts": "2026-11-18T13:45:38Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 300.44, "rule": null}
+{"ts": "2026-11-18T13:45:40Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 271.16, "rule": null}
+{"ts": "2026-11-18T13:45:54Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 97.35, "rule": null}
+{"ts": "2026-11-18T13:49:22Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 5.42, "rule": null}
+{"ts": "2026-11-18T13:50:12Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "deny", "latency_ms": 4.82, "rule": "[CEH PRODUCTION LOCK]"}
+{"ts": "2026-11-18T13:50:17Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 212.93, "rule": null}
+{"ts": "2026-11-18T13:50:27Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 46.23, "rule": null}
+{"ts": "2026-11-18T13:50:37Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 134.23, "rule": null}
+{"ts": "2026-11-18T13:50:40Z", "terminal": "fernando-trabalho", "tool": "run_command", "decision": "allow", "latency_ms": 14.86, "rule": null}

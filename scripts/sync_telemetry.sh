@@ -22,6 +22,10 @@ else
     echo "==> Nenhum log novo para commitar."
 fi
 
+# Alinha commits remotos multi-terminal preservando escritas incrementais em andamento
+echo "==> Sincronizando estado remoto (rebase + autostash)..."
+git -C "$REPO_DIR" pull --rebase --autostash origin dev-security-opt-01-p01
+
 # Dispara o push para a branch dev-security-opt-01-p01
 echo "==> Enviando logs para origin dev-security-opt-01-p01..."
 git -C "$REPO_DIR" push origin dev-security-opt-01-p01
